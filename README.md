@@ -46,6 +46,8 @@ Create [MARP](https://marp.app/) markdown slide decks and convert to PDF, HTML, 
 
 ### curaitor
 
+> Licensed under the [Elastic License 2.0](plugins/curaitor/LICENSE.md). Free to use. See license for details.
+
 AI-powered article discovery, triage, and interactive review. Automates finding and filtering articles while keeping you in the loop for what matters.
 
 **Features:**
