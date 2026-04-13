@@ -166,6 +166,8 @@ def read_folder(vault, folder, limit=None, days=None):
             'confidence': fm.get('confidence', ''),
             'verdict': fm.get('verdict', ''),
             'tags': fm.get('tags', []),
+            'reviewed_ignored': fm.get('reviewed_ignored', ''),
+            'review_decision': fm.get('review_decision', ''),
             'repo': repo,
             'summary': sections.get('summary', ''),
             'why_review': sections.get('why review?', sections.get('verdict', '')),

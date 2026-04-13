@@ -3,7 +3,7 @@
 Batch-scan ignored articles to catch false negatives. This is a high-throughput triage pass, NOT an article-by-article review — present grouped summaries so the user can dismiss entire categories at a glance.
 
 ## Arguments
-$ARGUMENTS — Optional: number of days to look back (default 30).
+$ARGUMENTS — Optional: number of days to look back (default 30), or `all` to re-review previously reviewed articles.
 
 ## Step 1: Load and read all notes
 
@@ -14,6 +14,7 @@ $ARGUMENTS — Optional: number of days to look back (default 30).
    ```
    This returns JSON with all articles, vault tags, and topics. Use this data for grouping instead of individual MCP calls.
 3. **Dedup first**: Before presenting articles, run URL dedup against the full vault. Duplicates are common in Ignored (39% in one session). Recycle all duplicates immediately — append `- [title](url) (duplicate)` to `Curaitor/Recycle.md` and delete notes. Report: "Recycled N duplicates before review."
+4. **Filter already-reviewed**: Skip articles that have `reviewed_ignored` in their frontmatter (already reviewed in a previous session). Report: "Skipping N previously reviewed articles." If $ARGUMENTS includes `all`, include them anyway.
 
 ## Step 2: Group by ignore reason and present batches
 
@@ -57,11 +58,20 @@ Examples: "all good", "rescue 1,3 from flagged", "show me the benchmarks list"
 
 ## Step 3: Process user response
 
-- **"all good"** / **"none"** → confirm all as correctly ignored (**true negatives**). For each confirmed article: append `- [title](url)` to `Curaitor/Recycle.md`, then delete the note from `Curaitor/Ignored/`. Use confirmed ignores as signal that triage is working correctly for these patterns.
-- **"rescue N,N"** or article numbers from the flagged list → move to `Curaitor/Review/` (**false negatives**). Agent analyzes WHY triage wrongly ignored these and updates preferences to decrease the false-negative rate.
+For every article that receives a verdict, **update its frontmatter first** (via `mcp__obsidian__update_frontmatter`) before recycling or moving:
+```yaml
+reviewed_ignored: "YYYY-MM-DD"
+review_decision: tn  # or fn
+```
+This prevents re-review in future sessions and creates an audit trail.
+
+Then process the verdict:
+- **"all good"** / **"none"** → tag all as `review_decision: tn`, then recycle: append `- [title](url)` to `Curaitor/Recycle.md`, delete from `Curaitor/Ignored/`. **True negatives** — triage was correct.
+- **"rescue N,N"** or article numbers from the flagged list → tag as `review_decision: fn`, then move to `Curaitor/Review/`. **False negatives** — agent analyzes WHY and updates preferences.
 - **"show me [category]"** → expand that category to show all titles, let user pick
 - **"rescue [category] N,N"** → rescue specific articles from an expanded category
-- Any rescued article: move from `Curaitor/Ignored/` to `Curaitor/Review/` via `mcp__obsidian__move_note`
+- Any rescued article: tag as `fn`, move from `Curaitor/Ignored/` to `Curaitor/Review/` via `mcp__obsidian__move_note`
+- **Unreviewed articles** (user skipped a category): leave in `Curaitor/Ignored/` without tags — they'll appear in the next review-ignored session.
 
 ## Step 4: Update preferences, accuracy stats, and summarize
 
