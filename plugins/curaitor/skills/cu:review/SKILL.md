@@ -44,14 +44,46 @@ Review queue: 18 articles
 Starting with #1.
 ```
 
-### Topic clustering
-When building the queue overview, scan for clusters of 3+ articles sharing a theme (similar tags, categories, or keywords). If found, note them:
+### Topic grouping (20+ articles)
+When the review queue has 20 or more articles, pre-group them by topic before presenting. This enables batch decisions and faster throughput.
+
+1. **Cluster articles** by semantic similarity (shared tags, category, title keywords). Groups should have 2+ articles. Articles that don't naturally cluster with others remain standalone — don't force grouping.
+
+2. **Present grouped overview** instead of a flat list:
 ```
-Clusters detected:
-  5 articles on MCED/liquid biopsy — offer to create topic?
-  3 articles on spec-driven development
+Review queue: 42 articles (7 groups + 5 standalone)
+
+━━ MCED / Liquid Biopsy (6) ━━
+  "MCED Slides - Multi-Cancer Early Detection"
+  "Caris Life Sciences multi-cancer early detection cfDNA"
+  ... 4 more
+  → My suggestion: t:MCED & Liquid Biopsy — all related, create topic
+  [enter] accept  [expand] show all  [n] recycle group  [skip] review individually
+
+━━ AI Agent Architecture (5) ━━
+  "Platform Engineering with MCP"
+  "Building Reliable Agents"
+  ... 3 more
+  → My suggestion: t:AI Agent Architecture — extend existing topic
+  [enter] accept  [expand] show all  [n] recycle group  [skip] review individually
+
+━━ Standalone articles (5) ━━
+  1. "OpenCode vs Claude Code" — instapaper · ai-tooling
+  2. "Predicting Protein Thermostability" — rss · methods
+  ... (reviewed individually as normal)
 ```
-When the user reaches a clustered group, offer to create a new topic and batch-attach all related articles. This is faster than reviewing individually and builds the knowledge graph.
+
+3. **Group actions**: The user can act on an entire group with one verdict:
+   - **enter** — accept the suggestion (e.g., create/extend topic for all articles in group)
+   - **y** — move all to Inbox
+   - **n** — recycle all (each counts as FP)
+   - **t** or **t:Topic Name** — attach all to a topic
+   - **expand** — break the group open and review each article individually
+   - **skip** — leave all in Review
+
+4. **Standalone articles** are reviewed one-at-a-time using the normal flow (steps 4+).
+
+5. **Always offer grouping opt-out**: If the user prefers flat review, typing `flat` at the grouped overview switches to the normal sequential flow.
 
 ## Step 3.5: Pre-fetch pipeline (script + parallel sub-agents)
 
