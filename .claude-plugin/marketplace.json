@@ -17,6 +17,15 @@
       "author": { "name": "John Didion" },
       "license": "MIT",
       "keywords": ["slides", "marp", "pptx", "presentations", "mermaid"]
+    },
+    {
+      "name": "salvage",
+      "source": "./plugins/salvage",
+      "description": "Remove AI writing patterns and humanize text using vocabulary tiers, structural analysis, voice presets, and a two-pass rewrite workflow",
+      "version": "1.0.0",
+      "author": { "name": "John Didion" },
+      "license": "MIT",
+      "keywords": ["writing", "unslop", "editing", "humanize", "ai-detection"]
     }
   ]
 }
