@@ -1,0 +1,78 @@
+# Triage routing rules
+# These rules supplement the LLM-based evaluation with deterministic routing.
+# Matched rules take priority over LLM confidence scoring.
+
+# Articles from these domains go straight to Inbox
+inbox_domains:
+  - biorxiv.org
+  - medrxiv.org
+  - nature.com/articles
+  - genomeweb.com
+  - doi.org/10.1093/bioinformatics
+  - doi.org/10.1093/bib
+  - doi.org/10.1186  # BMC journals
+  - genome.cshlp.org
+
+# Articles with these keywords in the title go to Inbox
+inbox_title_keywords:
+  - variant calling
+  - variant caller
+  - cfDNA
+  - cell-free DNA
+  - nanopore
+  - methylation
+  - copy number
+  - CNV detection
+  - aneuploidy
+  - uniparental disomy
+  - fetal fraction
+  - carrier screening
+  - prenatal
+  - sequencing pipeline
+  - WDL
+  - Nextflow
+
+# Meta-science and cross-cutting methodology → bias toward Review (not Ignored)
+# These benefit any researcher regardless of specific field
+review_title_keywords:
+  - reproducibility
+  - staying current
+  - data visualization
+  - interpretable
+  - benchmarking
+  - meta-analysis
+  - best practices
+  - code review
+  - scientific computing
+
+# Articles matching these patterns go to Ignored
+ignored_title_patterns:
+  - "Sign Up | LinkedIn"  # broken LinkedIn saves
+  - "Release v"  # minor release notes (unless tool is actively used)
+
+# Source weighting: Instapaper saves are hand-curated (higher signal)
+# When uncertain, prefer Review over Ignored for Instapaper-sourced articles
+source_weights:
+  instapaper: 0.7   # bias toward Review/Inbox
+  rss: 0.5          # neutral
+
+# Autonomy-level routing overrides (read from config/accuracy-stats.yaml)
+# These constrain how aggressively the LLM can route articles to Ignored
+autonomy_overrides:
+  level_0:  # Cold start — very conservative
+    instapaper_min_confidence: uncertain       # never ignored, Review at worst
+    rss_ignore_requires: deterministic_rule    # LLM alone can't ignore RSS
+    prompt_review_ignored: always              # remind after every triage run
+  level_1:  # Normal — standard three-tier
+    instapaper_min_confidence: high-not-interested  # normal routing
+    rss_ignore_requires: llm_or_rule           # LLM can ignore freely
+    prompt_review_ignored: 14_days             # remind if not run in 14 days
+  level_2:  # Confident — less conservative
+    instapaper_min_confidence: high-not-interested
+    rss_ignore_requires: llm_or_rule
+    prompt_review_ignored: 30_days             # monthly reminder
+  level_3:  # Auto-recycle — known patterns skip human review
+    instapaper_min_confidence: high-not-interested
+    rss_ignore_requires: llm_or_rule
+    auto_recycle_patterns: true                # confirmed junk patterns auto-recycled
+    prompt_review_ignored: 30_days

@@ -1,0 +1,19 @@
+# Zotero integration settings (gitignored)
+# Copy to config/zotero.yaml and customize
+
+enabled: true
+
+# API mode: "local" (Zotero connector, recommended) or "web" (pyzotero + API key)
+api: local
+
+# Target collection for new papers
+collection_id: ""       # auto-detected during setup
+collection_name: Inbox
+
+# Behavior
+auto_tag: true          # copy tags from Obsidian note to Zotero entry
+save_notes: true        # save summary + review context as Zotero note
+
+# Web API fallback (only needed if api: web)
+# user_id: "12345"
+# api_key: "xxxxxxxxxxxxxxxxxxxxxxxx"

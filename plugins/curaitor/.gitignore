@@ -1,0 +1,31 @@
+# Credentials (never commit)
+*.credentials
+*.key
+*.secret
+.env
+
+# Claude Code state (may cache secrets)
+.omc/
+.claude/*
+!.claude/commands/
+
+# Session files (may contain PII)
+session-learnings*.md
+
+# Config with personal data
+config/reading-prefs.md
+config/feeds.yaml
+config/user-settings.yaml
+config/zotero.yaml
+config/accuracy-stats.yaml
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS
+.DS_Store
+
+# Logs
+*.log

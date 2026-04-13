@@ -44,6 +44,30 @@ Create [MARP](https://marp.app/) markdown slide decks and convert to PDF, HTML, 
 /slides diagram flow.mmd       # Render Mermaid diagram to PNG
 ```
 
+### curaitor
+
+AI-powered article discovery, triage, and interactive review. Automates finding and filtering articles while keeping you in the loop for what matters.
+
+**Features:**
+- Three-tier confidence routing (Inbox / Review / Ignored) with progressive autonomy
+- Interactive review in cmux browser with deep-read RAG discussion
+- Instapaper, RSS/Feedly, and social network (Sill) sources
+- Zotero integration, Obsidian topic graph, preference learning from every verdict
+
+**Requirements:**
+- [Obsidian](https://obsidian.md) with MCP server
+- Python 3 with `requests-oauthlib` and `pyyaml`
+- [cmux](https://cmux.dev) (optional, for interactive browser review)
+
+**Usage:**
+```
+/cu:triage          # Process Instapaper saves
+/cu:discover        # Surface articles from RSS feeds
+/cu:review          # Interactive review session
+/cu:read            # Deep reading with RAG discussion
+/cu:review-ignored  # Check for false negatives
+```
+
 ## License
 
 MIT

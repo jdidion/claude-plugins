@@ -1,0 +1,18 @@
+# RSS feeds for /cu:discover
+# Generate this file by importing your OPML export:
+#   python scripts/import-opml.py ~/Downloads/feedly-export.opml [--folder Science]
+#
+# Or add feeds manually:
+
+feeds:
+  - name: bioRxiv Bioinformatics
+    url: http://connect.biorxiv.org/biorxiv_xml.php?subject=bioinformatics+genetics+genomics
+    category: science
+  - name: Nature Genetics
+    url: http://feeds.nature.com/ng/rss/current
+    category: science
+  # Per-feed user_agent override (for sites that block bots):
+  # - name: GenomeWeb
+  #   url: https://www.genomeweb.com/channel/all/rss
+  #   category: science
+  #   user_agent: "Googlebot/2.1 (+http://www.google.com/bot.html)"
