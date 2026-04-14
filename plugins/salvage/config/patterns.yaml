@@ -1,0 +1,196 @@
+# Salvage pattern database
+# Externalized from SKILL.md to reduce token usage during LLM invocations.
+# Used by scripts/detect.py for mechanical pattern matching.
+
+tier1:
+  # Near-certain AI signals regardless of context. Always replace.
+  delve: "dig into, examine, explore"
+  tapestry: "mix, combination, range"
+  landscape: "field, market, situation"
+  paradigm: "model, approach, pattern"
+  "leverage (verb)": "use, apply, build on"
+  robust: "strong, solid, reliable"
+  seamless: "smooth, easy, integrated"
+  ecosystem: "system, network, community"
+  holistic: "complete, full, whole"
+  nuanced: "subtle, detailed, specific"
+  compelling: "strong, convincing, clear"
+  innovative: "new, original, different"
+  crucial: "important, key, necessary"
+  multifaceted: "complex, varied, many-sided"
+  embark: "start, begin, launch"
+  testament: "proof, sign, evidence"
+  spearhead: "lead, drive, start"
+  foster: "build, grow, encourage"
+  underpin: "support, form the basis of"
+  underscore: "show, highlight, stress"
+  moreover: "also, and, plus"
+  furthermore: "also, and, besides"
+  nonetheless: "still, but, yet"
+  harnessing: "using, applying"
+  utilize: "use"
+  facilitate: "help, enable, make possible"
+  endeavor: "effort, attempt, try"
+  commendable: "good, impressive, strong"
+  noteworthy: "notable, worth mentioning"
+  intricate: "complex, detailed"
+  pivotal: "key, central, important"
+  realm: "area, field, world"
+  comprehensive: "full, complete, thorough"
+  arguably: "(cut entirely or state the claim directly)"
+  indispensable: "essential, necessary"
+  game-changing: "(state the specific change instead)"
+  groundbreaking: "new, first, original"
+  cutting-edge: "latest, modern, advanced"
+  thought-provoking: "interesting, raises questions"
+  "at the end of the day": "(cut entirely)"
+  "navigate (metaphorical)": "handle, manage, work through"
+  "unlock (metaphorical)": "enable, reveal, open"
+  "shed light on": "explain, show, clarify"
+  "in terms of": "for, about, regarding"
+  "at its core": "basically, fundamentally"
+  "strike a balance": "balance, weigh"
+  "pave the way": "lead to, enable, prepare for"
+  "it's important to note": "(cut entirely; just state the thing)"
+  "it's worth noting": "(cut entirely)"
+  "in today's [X]": "(cut entirely or name the specific date/era)"
+  "in an era of": "(cut entirely or be specific)"
+  "the power of": "(cut entirely; describe the effect directly)"
+  "the art of": "(cut entirely)"
+  "deep dive": "detailed look, close examination"
+  "double-edged sword": "tradeoff, has downsides"
+  resonate: "connect, matter, land"
+  reimagine: "rethink, redesign, redo"
+  # New from tropes.fyi cross-reference
+  certainly: "(cut entirely or be specific about what's certain)"
+  "quietly (metaphorical)": "without announcement, privately"
+  "deeply (filler)": "(cut or be specific about depth)"
+  remarkably: "(cut or state what's notable)"
+  "serves as": "is, works as"
+  "stands as": "is"
+
+tier2:
+  # Legitimate words that become AI signals when clustered (3+ triggers flag).
+  words:
+    - amplify
+    - bolster
+    - catalyze
+    - curate
+    - demystify
+    - elevate
+    - empower
+    - envision
+    - galvanize
+    - juxtapose
+    - optimize
+    - orchestrate
+    - proliferate
+    - propel
+    - revolutionize
+    - streamline
+    - synergy
+    - synthesize
+    - tailor
+    - transcend
+    - underline
+    - unpack
+    - unveil
+    - burgeoning
+    - discerning
+    - evolving
+    - ever-evolving
+    - forward-thinking
+    - granular
+    - meticulous
+    - overarching
+    - proliferating
+    - seminal
+    - symbiotic
+    - top-notch
+    - transformative
+    - unparalleled
+  cluster_threshold: 3
+
+tier3:
+  # Common words that only signal AI when overused.
+  words:
+    - address
+    - align
+    - approach
+    - challenge
+    - context
+    - dynamic
+    - framework
+    - impact
+    - initiative
+    - integrate
+    - objective
+    - perspective
+    - prioritize
+    - scope
+    - strategy
+    - stakeholder
+  density_threshold: 5  # per 500 words
+
+banned_phrases:
+  throat_clearing:
+    - "Here's the thing"
+    - "The uncomfortable truth is"
+    - "Let me be clear"
+    - "It turns out"
+    - "Let's be honest"
+    - "Here's what most people get wrong"
+    - "The short answer is"
+    - "The reality is"
+    - "What's fascinating is"
+    - "Picture this"
+    - "Imagine a world where"
+    - "In a world where"
+    - "Here's where it gets interesting"
+    - "Here's the kicker"
+    - "Think of it as"
+    - "Let's break this down"
+    - "The truth is simple"
+
+  emphasis_crutches:
+    - "Full stop."
+    - "Let that sink in."
+    - "Read that again."
+    - "Period."
+    - "I'll say it again."
+
+  meta_commentary:
+    - "This is a great question"
+    - "That's an interesting point"
+    - "I appreciate you sharing"
+    - "Let me break this down"
+    - "Let me explain"
+    - "To put it simply"
+
+  structural_closers:
+    - "Final thoughts"
+    - "Key takeaways"
+    - "In conclusion"
+    - "The bottom line"
+    - "Looking ahead"
+    - "Moving forward"
+    - "To sum up"
+    - "At the end of the day"
+    - "What does this mean for you?"
+    - "In summary"
+
+  chatbot_artifacts:
+    - "As an AI"
+    - "I'd be happy to"
+    - "I don't have access to"
+    - "my training data"
+    - "my knowledge cutoff"
+
+context_profiles:
+  # Pattern tolerance by context. "fix" = always fix, "tolerate" = allow.
+  linkedin:   { tier1: fix, tier2_clusters: fix, throat_clearing: fix, structural_template: fix, formal_tone: tolerate, em_dash: fix }
+  blog:       { tier1: fix, tier2_clusters: fix, throat_clearing: fix, structural_template: fix, formal_tone: fix, em_dash: fix }
+  technical:  { tier1: fix, tier2_clusters: tolerate, throat_clearing: fix, structural_template: tolerate, formal_tone: tolerate, em_dash: tolerate }
+  email:      { tier1: fix, tier2_clusters: fix, throat_clearing: fix, structural_template: fix, formal_tone: fix, em_dash: fix }
+  docs:       { tier1: fix, tier2_clusters: tolerate, throat_clearing: tolerate, structural_template: tolerate, formal_tone: tolerate, em_dash: tolerate }
+  casual:     { tier1: fix, tier2_clusters: fix, throat_clearing: fix, structural_template: fix, formal_tone: fix, em_dash: fix }
