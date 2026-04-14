@@ -69,6 +69,13 @@ def _load_config() -> dict:
     return {}
 
 
+def _clear_placeholders(slide):
+    """Remove inherited placeholder shapes so they don't show 'Click to add' text."""
+    for ph in list(slide.placeholders):
+        sp = ph._element
+        sp.getparent().remove(sp)
+
+
 def clean_text(text: str) -> str:
     """Replace HTML entities. Does NOT strip comments (handled per-slide)."""
     for ent, char in ENTITIES.items():
@@ -536,6 +543,7 @@ def build_pptx(
         if cols:
             left_text, right_text = cols
             slide = prs.slides.add_slide(blank_layout)
+            _clear_placeholders(slide)
 
             # Find slide title (first # heading before or in columns)
             title_match = re.match(r"^(#\s+.+?)$", slide_text_clean, re.MULTILINE)
@@ -562,6 +570,7 @@ def build_pptx(
         else:
             # Single column
             slide = prs.slides.add_slide(blank_layout)
+            _clear_placeholders(slide)
             blocks = parse_slide_content(slide_text_clean)
 
             y = MARGIN_T
