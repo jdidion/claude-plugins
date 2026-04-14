@@ -10,7 +10,7 @@ $ARGUMENTS — Text to process, provided as:
 
 **Presets (voice):** `crisp` (default), `warm`, `expert`, `story`
 **Contexts (tolerance):** `linkedin`, `blog`, `technical`, `email`, `docs`, `casual`
-**Modes:** rewrite (default), detect (flag-only with `--detect`), prevent (emit system instruction with `--prevent`), learn (build voice profile with `--learn`)
+**Modes:** rewrite (default), detect (flag-only with `--detect`), prevent (emit system instruction with `--prevent`), learn (build voice profile with `--learn`), feedback (refine voice from edits with `--feedback`)
 
 ## Workflow
 
@@ -181,6 +181,60 @@ This extracts: sentence length stats, punctuation habits, contraction rate, firs
 ### Updating the profile
 
 Running `--learn` again replaces the profile. To add to it without replacing, use `--learn --append`.
+
+## Feedback Mode (--feedback)
+
+Refine the voice profile from user edits or direct feedback. This closes the learning loop: salvage writes, user edits, salvage learns.
+
+### Usage
+
+```
+/salvage --feedback before.md after.md       # diff two files (salvage output vs user edit)
+/salvage --feedback "too formal"             # direct text feedback
+/salvage --feedback                          # interactive: ask what to adjust
+```
+
+### Workflow
+
+**File diff mode** (`--feedback before.md after.md`):
+
+1. Run the diff script:
+   ```bash
+   python3 <plugin_root>/scripts/diff-voice.py before.md after.md --json
+   ```
+   This extracts: word replacements, sentence length shifts, punctuation changes, contraction/first-person adjustments, words added/removed.
+
+2. The LLM interprets the mechanical diff and generates higher-order observations:
+   - "User shortened sentences and added contractions — wants more casual tone than 'crisp' preset delivers"
+   - "User replaced 'however' with 'but' consistently — prefers informal conjunctions"
+   - "User removed all parenthetical asides — dislikes hedging even more than the skill does"
+
+3. Update `config/voice-profile.yaml`:
+   - Append observations to `feedback_log` (keeps last 20 entries)
+   - If a pattern appears in 3+ feedback entries, promote it to `style_notes`
+   - If specific word replacements recur, add to `preferred_words` / `avoided_words`
+
+4. Report what was learned and what changed in the profile.
+
+**Text feedback mode** (`--feedback "too formal"`):
+
+1. Parse the feedback for actionable adjustments
+2. Map to profile changes (e.g., "too formal" → lower formality, increase contractions)
+3. Update `config/voice-profile.yaml` with the observation
+4. Confirm the change
+
+**Interactive mode** (`--feedback` with no args):
+
+1. Ask: "What would you adjust about the last rewrite?"
+2. Present options: tone, sentence length, vocabulary, structure, punctuation, other
+3. Capture the response and update the profile
+
+### Promotion rules
+
+Feedback observations are logged but not immediately applied as hard rules. Promotion:
+- **3 occurrences** of the same pattern → promoted to `style_notes` (soft guidance)
+- **5 occurrences** → promoted to `preferred_words`/`avoided_words` (hard rule)
+- User can manually promote via `/salvage --feedback promote "observation text"`
 
 ## Output Format
 

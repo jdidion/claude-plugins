@@ -140,6 +140,33 @@ Style notes:
   - Ends pieces with open questions or action items, never summaries
 ```
 
+### Feedback mode (voice refinement)
+
+After a `/salvage` rewrite, refine the voice profile from your edits:
+
+```
+/salvage --feedback draft-salvaged.md draft-final.md   # diff salvage output vs your edits
+/salvage --feedback "too formal, more contractions"    # direct text feedback
+/salvage --feedback                                    # interactive
+```
+
+The skill diffs your edits against its output and extracts patterns: word replacements, sentence length preferences, punctuation adjustments, tone shifts. Observations are logged to `config/voice-profile.yaml` and promoted to hard rules after repeated occurrence:
+
+```
+Voice feedback analysis (4 observations):
+
+  - User prefers shorter sentences (avg 11 vs salvage's 16 words)
+  - User added more contractions — prefers conversational tone
+  - Replaced 'however' -> 'but'
+  - Replaced 'additionally' -> 'also'
+
+Saved 4 observations to voice profile
+```
+
+Promotion rules:
+- **3 occurrences** of same pattern → promoted to `style_notes` (soft guidance)
+- **5 occurrences** → promoted to `preferred_words`/`avoided_words` (hard rule)
+
 ## How it works
 
 1. **Diagnose** — `scripts/detect.py` mechanically scans for flagged vocabulary, banned phrases, and structural patterns against `config/patterns.yaml`. This runs outside the LLM to save tokens.
