@@ -1,6 +1,6 @@
 # claude-plugins
 
-A [Claude Code plugin marketplace](https://docs.anthropic.com/en/docs/claude-code/plugins) with tools for presentations, data analysis, and more.
+A [Claude Code plugin marketplace](https://docs.anthropic.com/en/docs/claude-code/plugins) with tools for presentations, writing, article curation, and more.
 
 ## Installation
 
@@ -14,9 +14,18 @@ Then install individual plugins:
 
 ```
 /plugin install slides@jdidion-plugins
+/plugin install muck@jdidion-plugins
 ```
 
 ## Plugins
+
+| Plugin | Description | Commands |
+|--------|-------------|----------|
+| [slides](#slides) | MARP slide decks to PDF, PPTX, Google Slides | `/slides` |
+| [muck](#muck) | Fight AI slop: spot, guard, clean, learn voice | `/muck:spot` `/muck:guard` `/muck:clean` `/muck:voice` |
+| [curaitor](#curaitor) | Article discovery, triage, and review | `/cu:triage` `/cu:discover` `/cu:review` `/cu:read` |
+
+---
 
 ### slides
 
@@ -43,6 +52,43 @@ Create [MARP](https://marp.app/) markdown slide decks and convert to PDF, HTML, 
 /slides new talk.md            # Create a new slide deck
 /slides diagram flow.mmd       # Render Mermaid diagram to PNG
 ```
+
+---
+
+### muck
+
+Four tools for fighting AI slop: spot it, guard against it, clean it up, and learn your voice.
+
+**Commands:**
+
+| Command | Purpose | When to use |
+|---------|---------|-------------|
+| `/muck:spot` | Detect slop | Before submitting — "how sloppy is this?" |
+| `/muck:guard` | Prevent slop | Configuring CLAUDE.md or skill preambles |
+| `/muck:clean` | Remove slop | After drafting — rewrite with human voice |
+| `/muck:voice` | Learn your voice | Periodically — teach muck how you write |
+
+**Features:**
+- 62 Tier 1 flagged words + 38 Tier 2 + 16 Tier 3 + 42 banned phrases
+- Mechanical detection script (runs outside LLM, saves tokens)
+- Voice presets: crisp, warm, expert, story
+- Context profiles: linkedin, blog, technical, email, docs, casual
+- Voice learning from writing samples + feedback loop from edits
+- Guard mode emits compact anti-slop instructions for any CLAUDE.md
+
+**Requirements:**
+- Python 3.9+ with `pyyaml` (`pip install pyyaml`)
+
+**Usage:**
+```
+/muck:spot draft.md                          # Detect slop
+/muck:clean draft.md --preset crisp          # Rewrite to remove slop
+/muck:guard --format section                 # Anti-slop CLAUDE.md block
+/muck:voice --learn essay.md blog.md         # Learn your voice
+/muck:voice --feedback output.md edited.md   # Refine from your edits
+```
+
+---
 
 ### curaitor
 
@@ -72,4 +118,4 @@ AI-powered article discovery, triage, and interactive review. Automates finding 
 
 ## License
 
-MIT
+MIT (unless otherwise noted per plugin)
