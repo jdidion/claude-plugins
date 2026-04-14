@@ -1,8 +1,0 @@
-{
-  "name": "salvage",
-  "version": "1.0.0",
-  "description": "Remove AI writing patterns and humanize text using vocabulary tiers, structural analysis, voice presets, and a two-pass rewrite workflow",
-  "author": { "name": "John Didion" },
-  "license": "MIT",
-  "keywords": ["writing", "unslop", "editing", "humanize", "ai-detection"]
-}

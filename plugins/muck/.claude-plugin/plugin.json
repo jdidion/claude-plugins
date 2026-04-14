@@ -1,0 +1,8 @@
+{
+  "name": "muck",
+  "version": "1.0.0",
+  "description": "Four tools for fighting AI slop: spot it, guard against it, clean it up, and learn your voice",
+  "author": { "name": "John Didion" },
+  "license": "MIT",
+  "keywords": ["writing", "slop", "editing", "humanize", "ai-detection", "voice"]
+}
