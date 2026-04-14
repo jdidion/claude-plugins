@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/Users/jodidion/.claude/scripts/.venv/bin/python
 """Convert MARP markdown slides to styled PPTX matching the teal/white theme."""
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from pathlib import Path
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
-from pptx.util import Inches, Pt
+from pptx.util import Inches, Pt, Emu
 
 # Theme colors
 TEAL = RGBColor(0x00, 0x78, 0x8A)
@@ -59,9 +59,13 @@ def add_styled_run(paragraph, text: str, bold=False, italic=False, size=Pt(18),
     run.font.name = font_name
 
 
-def add_rich_text(tf, text: str, size=Pt(18), color=DARK, alignment=PP_ALIGN.LEFT):
+def add_rich_text(tf, text: str, size=Pt(18), color=DARK, alignment=PP_ALIGN.LEFT,
+                   use_first_paragraph=False):
     """Add text with **bold** and `code` markdown rendered."""
-    p = tf.add_paragraph()
+    if use_first_paragraph and len(tf.paragraphs) == 1 and tf.paragraphs[0].text == "":
+        p = tf.paragraphs[0]
+    else:
+        p = tf.add_paragraph()
     p.alignment = alignment
     p.space_after = Pt(4)
 
@@ -77,9 +81,12 @@ def add_rich_text(tf, text: str, size=Pt(18), color=DARK, alignment=PP_ALIGN.LEF
             add_styled_run(p, part, size=size, color=color)
 
 
-def add_heading(tf, text: str, level: int):
+def add_heading(tf, text: str, level: int, use_first_paragraph=False):
     """Add a heading to a text frame."""
-    p = tf.add_paragraph()
+    if use_first_paragraph and len(tf.paragraphs) == 1 and tf.paragraphs[0].text == "":
+        p = tf.paragraphs[0]
+    else:
+        p = tf.add_paragraph()
     p.space_after = Pt(8)
     text = text.lstrip("# ").strip()
 
@@ -107,6 +114,7 @@ def add_table(slide, rows_data: list[list[str]], left, top, width):
     if n_rows == 0 or n_cols == 0:
         return top
 
+    col_w = int(width / n_cols)
     row_h = Inches(0.4)
     table_h = row_h * n_rows
 
@@ -389,7 +397,11 @@ def render_blocks(slide, blocks: list[dict], left, top, width, base_dir: Path):
     return y
 
 
-def build_pptx(md_path: str | Path, output_path: str | Path):
+def build_pptx(
+    md_path: str | Path,
+    output_path: str | Path,
+    template_path: str | Path | None = None,
+):
     md_path = Path(md_path)
     output_path = Path(output_path)
     base_dir = md_path.parent
@@ -408,26 +420,87 @@ def build_pptx(md_path: str | Path, output_path: str | Path):
     # Split into slides
     slide_texts = re.split(r"\n---\n", content)
 
-    prs = Presentation()
+    # Load template or create blank presentation
+    if template_path and Path(template_path).exists():
+        prs = Presentation(str(template_path))
+        # Delete all existing template slides (keep layouts/masters)
+        for _ in range(len(prs.slides)):
+            sldId = prs.slides._sldIdLst[0]
+            rId = sldId.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
+            if rId:
+                prs.part.drop_rel(rId)
+            prs.slides._sldIdLst.remove(sldId)
+        print(f"Using template: {template_path} ({len(prs.slide_layouts)} layouts)")
+    else:
+        prs = Presentation()
+
     prs.slide_width = SLIDE_W
     prs.slide_height = SLIDE_H
-    blank_layout = prs.slide_layouts[6]  # Blank layout
+
+    # Find layouts by name (for template) or use blank
+    layout_map = {sl.name: sl for sl in prs.slide_layouts}
+    blank_layout = layout_map.get("BLANK", layout_map.get("Blank", prs.slide_layouts[-1]))
+    title_layout = layout_map.get("TITLE", blank_layout)
+    section_layout = layout_map.get("SECTION_HEADER", blank_layout)
 
     for slide_text in slide_texts:
         slide_text = slide_text.strip()
         if not slide_text:
             continue
 
-        slide = prs.slides.add_slide(blank_layout)
+        # Detect if this is a title/section slide (lead class + only headings)
+        is_lead = "<!-- _class: lead -->" in slide_text
+        slide_text_clean = re.sub(r"<!--.*?-->", "", slide_text, flags=re.DOTALL).strip()
+
+        if is_lead:
+            # Use TITLE layout for lead slides
+            slide = prs.slides.add_slide(title_layout)
+            blocks = parse_slide_content(slide_text_clean)
+            # Fill title placeholder if available
+            if title_layout != blank_layout and len(slide.placeholders) >= 2:
+                title_ph = slide.placeholders[0]
+                title_ph.text = ""
+                h1_blocks = [b for b in blocks if b["type"] == "h1"]
+                h2_blocks = [b for b in blocks if b["type"] == "h2"]
+                text_blocks = [b for b in blocks if b["type"] == "text"]
+                if h1_blocks:
+                    add_heading(title_ph.text_frame, h1_blocks[0]["text"], 1,
+                               use_first_paragraph=True)
+                subtitle_ph = slide.placeholders[1]
+                subtitle_ph.text = ""
+                if h2_blocks:
+                    add_heading(subtitle_ph.text_frame, h2_blocks[0]["text"], 2,
+                               use_first_paragraph=True)
+                if text_blocks:
+                    add_rich_text(subtitle_ph.text_frame, clean_text(text_blocks[0]["text"]),
+                                 size=Pt(18), color=GRAY, use_first_paragraph=not h2_blocks)
+            else:
+                # Fallback: manual text boxes
+                y = Inches(1.5)
+                for b in blocks:
+                    if b["type"] == "h1":
+                        tf = slide.shapes.add_textbox(MARGIN_L, y, CONTENT_W, Inches(0.7)).text_frame
+                        tf.word_wrap = True
+                        add_heading(tf, b["text"], 1, use_first_paragraph=True)
+                        y += Inches(0.9)
+                    elif b["type"] in ("h2", "text"):
+                        tf = slide.shapes.add_textbox(MARGIN_L, y, CONTENT_W, Inches(0.5)).text_frame
+                        tf.word_wrap = True
+                        text = b["text"].lstrip("# ").strip() if b["type"] == "h2" else b["text"]
+                        add_rich_text(tf, text, size=Pt(18), color=GRAY,
+                                     use_first_paragraph=True)
+                        y += Inches(0.6)
+            continue
 
         # Check for two-column layout
-        cols = detect_columns(slide_text)
+        cols = detect_columns(slide_text_clean)
 
         if cols:
             left_text, right_text = cols
+            slide = prs.slides.add_slide(blank_layout)
 
             # Find slide title (first # heading before or in columns)
-            title_match = re.match(r"^(#\s+.+?)$", slide_text, re.MULTILINE)
+            title_match = re.match(r"^(#\s+.+?)$", slide_text_clean, re.MULTILINE)
             title_y = MARGIN_T
 
             if title_match:
@@ -435,7 +508,7 @@ def build_pptx(md_path: str | Path, output_path: str | Path):
                 tf = slide.shapes.add_textbox(MARGIN_L, title_y, CONTENT_W, Inches(0.45)).text_frame
                 tf.word_wrap = True
                 tf.auto_size = None
-                add_heading(tf, title, 1)
+                add_heading(tf, title, 1, use_first_paragraph=True)
                 title_y += Inches(0.85)
                 # Remove title from column content
                 left_text = re.sub(r"^#\s+.+?\n", "", left_text, count=1).strip()
@@ -450,7 +523,8 @@ def build_pptx(md_path: str | Path, output_path: str | Path):
                          MARGIN_L + HALF_W + COL_GAP, title_y, HALF_W, base_dir)
         else:
             # Single column
-            blocks = parse_slide_content(slide_text)
+            slide = prs.slides.add_slide(blank_layout)
+            blocks = parse_slide_content(slide_text_clean)
 
             y = MARGIN_T
             # If first block is h1, render it as the slide title
@@ -458,7 +532,7 @@ def build_pptx(md_path: str | Path, output_path: str | Path):
                 tf = slide.shapes.add_textbox(MARGIN_L, y, CONTENT_W, Inches(0.45)).text_frame
                 tf.word_wrap = True
                 tf.auto_size = None
-                add_heading(tf, blocks[0]["text"], 1)
+                add_heading(tf, blocks[0]["text"], 1, use_first_paragraph=True)
                 y += Inches(0.85)
                 blocks = blocks[1:]
 
@@ -471,14 +545,24 @@ def build_pptx(md_path: str | Path, output_path: str | Path):
 if __name__ == "__main__":
     import sys
 
-    if len(sys.argv) < 2:
-        print("Usage: marp_to_pptx.py <input.md> [output.pptx]")
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    flags = {a.split("=")[0]: a.split("=", 1)[1] if "=" in a else True
+             for a in sys.argv[1:] if a.startswith("--")}
+
+    if len(args) < 1:
+        print("Usage: marp_to_pptx.py <input.md> [output.pptx] [--template=path.pptx]")
         sys.exit(1)
 
-    input_path = Path(sys.argv[1])
-    if len(sys.argv) >= 3:
-        output_path = Path(sys.argv[2])
-    else:
-        output_path = input_path.with_suffix(".pptx")
+    input_path = Path(args[0])
+    output_path = Path(args[1]) if len(args) >= 2 else input_path.with_suffix(".pptx")
 
-    build_pptx(input_path, output_path)
+    # Template: explicit flag > config file > None
+    template = flags.get("--template")
+    if template is None:
+        config_file = Path.home() / ".claude" / "scripts" / "slides_config.json"
+        if config_file.exists():
+            import json
+            config = json.loads(config_file.read_text())
+            template = config.get("default_template")
+
+    build_pptx(input_path, output_path, template_path=template)
