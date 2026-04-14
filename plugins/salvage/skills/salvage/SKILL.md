@@ -10,7 +10,7 @@ $ARGUMENTS — Text to process, provided as:
 
 **Presets (voice):** `crisp` (default), `warm`, `expert`, `story`
 **Contexts (tolerance):** `linkedin`, `blog`, `technical`, `email`, `docs`, `casual`
-**Modes:** rewrite (default), detect (flag-only with `--detect`), prevent (emit system instruction with `--prevent`)
+**Modes:** rewrite (default), detect (flag-only with `--detect`), prevent (emit system instruction with `--prevent`), learn (build voice profile with `--learn`)
 
 ## Workflow
 
@@ -64,7 +64,16 @@ If the script is unavailable, diagnose inline using the priority categories belo
 
 ### Pass 2: Reconstruct
 
-Rewrite the text applying the selected voice preset, preserving all facts.
+If `config/voice-profile.yaml` exists and has non-null values, load it and apply the user's voice during reconstruction:
+- Match sentence length to their statistical profile (mean and variance)
+- Match punctuation habits (em-dash frequency, semicolon usage, etc.)
+- Apply style notes as additional constraints
+- Prefer their vocabulary preferences; avoid their avoided words
+- Follow their structural patterns (opener style, closer style, paragraph length)
+
+If a voice profile is not available, fall back to the selected voice preset.
+
+Rewrite the text applying the voice profile (or preset), preserving all facts.
 
 **Rules for reconstruction:**
 1. Start with the actual topic. No warming up.
@@ -125,6 +134,53 @@ Score the output on 8 criteria, 1-5 each. **32/40 to pass.**
 - The author's stance and opinions
 - Scope and qualifications ("some" vs "all", "often" vs "always")
 - Sequence and causation (don't imply causation where only correlation was stated)
+
+## Learn Mode (--learn)
+
+Build a voice profile from writing samples so future rewrites match the user's natural voice.
+
+### Usage
+
+```
+/salvage --learn file1.md file2.md file3.md    # analyze specific files
+/salvage --learn                                # open file browser to choose
+```
+
+### Workflow
+
+**Step 1: Select samples.** If no files are provided, browse for them:
+1. Check for `gum` CLI (`gum file --all`). If available, use it as a TUI file picker.
+2. Otherwise, use Glob to list `.md`, `.txt`, and `.org` files in the working directory and common writing locations (`~/Documents`, `~/Desktop`, Obsidian vault).
+3. Present the list and ask the user to pick 3-5 files that represent their best writing.
+
+**Step 2: Mechanical analysis.** Run the analysis script:
+
+```bash
+python3 <plugin_root>/scripts/analyze-voice.py --json file1.md file2.md file3.md
+```
+
+This extracts: sentence length stats, punctuation habits, contraction rate, first-person usage, vocabulary diversity, frequent content words, and structural patterns.
+
+**Step 3: LLM style analysis.** Read the sample files and extract higher-order observations that the script cannot detect:
+- How do paragraphs typically open? (example, claim, question, anecdote)
+- What is the overall tone? (direct, conversational, academic, confrontational)
+- Does the writing use analogies? From what domain?
+- How does the writer handle uncertainty or disagreement?
+- Are there signature phrases or constructions?
+- What is conspicuously absent? (lists, headers, rhetorical questions, hedging)
+
+**Step 4: Write the profile.** Merge script stats and LLM observations into `config/voice-profile.yaml`:
+- Populate `stats` and `punctuation` from the script output
+- Populate `style_notes` from LLM analysis (5-10 concise observations)
+- Populate `preferred_words` from the top content words that are distinctive (not just common)
+- Populate `avoided_words` if any standard words are conspicuously absent
+- Record sample file paths and timestamp
+
+**Step 5: Confirm.** Print the profile summary and ask if the user wants to adjust anything.
+
+### Updating the profile
+
+Running `--learn` again replaces the profile. To add to it without replacing, use `--learn --append`.
 
 ## Output Format
 

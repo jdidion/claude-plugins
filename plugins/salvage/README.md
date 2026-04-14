@@ -104,6 +104,42 @@ The skill scores output on 8 criteria (1-5 each, 40 max, 32 to pass):
 7. **Fact preservation** — all facts exactly preserved from original?
 8. **Pattern avoidance** — no detectable AI patterns remain?
 
+### Learn mode (voice profiling)
+
+Teach the skill your writing voice from 3-5 samples:
+
+```
+/salvage --learn                              # opens file browser
+/salvage --learn essay.md blogpost.md memo.md  # specific files
+```
+
+The skill runs a two-stage analysis:
+
+1. **Mechanical** (`scripts/analyze-voice.py`) — sentence length distribution, punctuation habits, contraction rate, first-person usage, vocabulary diversity, structural patterns
+2. **LLM** — higher-order observations: tone, analogy domains, opener/closer patterns, how you handle disagreement, signature phrases, what's conspicuously absent
+
+Results are saved to `config/voice-profile.yaml`. Future rewrites automatically match your voice instead of using generic presets.
+
+Example profile output:
+```
+Analyzed 3 samples (4,200 words, 312 sentences)
+
+Sentence length:  mean=14.2 words, std_dev=7.1, range=3-38
+Contractions:     18.3/1000 words (high — conversational)
+First person:     12.7/1000 words (moderate)
+Questions:        8.2% of sentences
+Em-dashes:        0.3/1000 words (rare)
+Semicolons:       2.1/1000 words (moderate)
+
+Style notes:
+  - Opens paragraphs with concrete examples, not abstractions
+  - Uses analogies from biology and engineering systems
+  - States disagreements directly without softening
+  - Prefers short paragraphs (2-3 sentences)
+  - Never uses rhetorical questions
+  - Ends pieces with open questions or action items, never summaries
+```
+
 ## How it works
 
 1. **Diagnose** — `scripts/detect.py` mechanically scans for flagged vocabulary, banned phrases, and structural patterns against `config/patterns.yaml`. This runs outside the LLM to save tokens.
