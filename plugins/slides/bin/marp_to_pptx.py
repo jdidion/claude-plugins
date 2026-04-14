@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -41,10 +42,37 @@ ENTITIES = {
 }
 
 
+def _find_layout(layout_map: dict, keywords: list[str], fallback=None):
+    """Find a slide layout by trying keywords.
+
+    Priority: exact match (all keywords) > substring match (all keywords) > fallback.
+    """
+    # Pass 1: exact match
+    for kw in keywords:
+        if kw in layout_map:
+            return layout_map[kw]
+    # Pass 2: case-insensitive substring
+    names_lower = {name.lower(): name for name in layout_map}
+    for kw in keywords:
+        kw_lower = kw.lower()
+        for name_lower, name in names_lower.items():
+            if kw_lower in name_lower:
+                return layout_map[name]
+    return fallback
+
+
+def _load_config() -> dict:
+    """Load slides_config.json if it exists."""
+    config_file = Path.home() / ".claude" / "scripts" / "slides_config.json"
+    if config_file.exists():
+        return json.loads(config_file.read_text())
+    return {}
+
+
 def clean_text(text: str) -> str:
+    """Replace HTML entities. Does NOT strip comments (handled per-slide)."""
     for ent, char in ENTITIES.items():
         text = text.replace(ent, char)
-    text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
     return text.strip()
 
 
@@ -437,11 +465,21 @@ def build_pptx(
     prs.slide_width = SLIDE_W
     prs.slide_height = SLIDE_H
 
-    # Find layouts by name (for template) or use blank
+    # Find layouts by name — try config overrides, then keyword search, then fallback
     layout_map = {sl.name: sl for sl in prs.slide_layouts}
-    blank_layout = layout_map.get("BLANK", layout_map.get("Blank", prs.slide_layouts[-1]))
-    title_layout = layout_map.get("TITLE", blank_layout)
-    section_layout = layout_map.get("SECTION_HEADER", blank_layout)
+    config = _load_config()
+    layout_names = config.get("layout_names", {})
+
+    def _resolve(role: str, keywords: list[str], fallback=None):
+        """Resolve layout: config override > keyword search > fallback."""
+        if role in layout_names and layout_names[role] in layout_map:
+            return layout_map[layout_names[role]]
+        return _find_layout(layout_map, keywords, fallback=fallback)
+
+    last_layout = prs.slide_layouts[-1]
+    blank_layout = _resolve("content", ["BLANK", "Blank", "Bullet", "Title_Subhead"], last_layout)
+    title_layout = _resolve("title", ["TITLE", "1_Cover", "Cover"], blank_layout)
+    section_layout = _resolve("section", ["SECTION_HEADER", "Divider"], title_layout)
 
     for slide_text in slide_texts:
         slide_text = slide_text.strip()
@@ -559,10 +597,6 @@ if __name__ == "__main__":
     # Template: explicit flag > config file > None
     template = flags.get("--template")
     if template is None:
-        config_file = Path.home() / ".claude" / "scripts" / "slides_config.json"
-        if config_file.exists():
-            import json
-            config = json.loads(config_file.read_text())
-            template = config.get("default_template")
+        template = _load_config().get("default_template")
 
     build_pptx(input_path, output_path, template_path=template)
