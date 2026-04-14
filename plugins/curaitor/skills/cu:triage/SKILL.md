@@ -106,6 +106,16 @@ For each article, evaluate and assign:
   - Is there a better-known alternative?
 - **Relevance** (brief note on connection to user's work)
 
+- **Slop check**: Evaluate whether the article text appears to be AI-generated slop:
+  - Heavy use of AI vocabulary tells: "delve", "tapestry", "landscape", "robust", "seamless", "ecosystem", "holistic", "nuanced", "compelling", "innovative", "game-changing", "groundbreaking"
+  - Filler phrases: "Here's the thing", "Let that sink in", "Let's unpack this", "In today's fast-paced..."
+  - Structural tells: "It's not X, it's Y" binary contrasts, self-posed rhetorical questions, dramatic fragments
+  - Significance inflation without substance
+  - No link to a source article, repo, paper, or tool (just rehashing other content)
+  - Set `slop_label: clean|mild|slop|heavy-slop` in frontmatter
+  - Articles scored as **slop** or **heavy-slop** with no source link should be recycled immediately
+  - Articles scored as **mild** get tagged but route normally
+
 Match against preferences in `reading-prefs.md` to determine confidence level.
 
 ## Step 3.5: Deduplicate and recycle duplicates

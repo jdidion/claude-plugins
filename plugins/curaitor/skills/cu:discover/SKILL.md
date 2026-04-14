@@ -39,6 +39,7 @@ For each new article, evaluate against `reading-prefs.md`.
   - Does this paper introduce a method from another field applicable to cfDNA/genomics?
   - Does this AI tool solve a problem the user faces in bioinformatics pipelines?
   - Is this a novel approach or just incremental work?
+- **Slop check**: Does the RSS description read like AI-generated filler? Look for: Tier 1 AI vocabulary (delve, tapestry, landscape, robust, seamless, ecosystem, holistic, nuanced, game-changing), throat-clearing phrases, binary contrasts ("It's not X, it's Y"), significance inflation without specifics. Tag `slop_label: clean|mild|slop|heavy-slop`. Slop articles with no source link → recycle immediately.
 
 ## Step 5: Route to Obsidian
 
