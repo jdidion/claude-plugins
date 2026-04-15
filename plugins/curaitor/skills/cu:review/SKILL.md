@@ -237,6 +237,7 @@ The user can type:
    *<https://github.com/steveyegge/beads|Beads: A memory upgrade for your coding agent>*
    Persistent structured memory for coding agents using Dolt. Replaces markdown plans with dependency-aware graphs for long-horizon tasks.
    Worth checking out if you're building agentic workflows. #ai-agents #developer-tools
+   _*Authored by Claude, pending human review*_
    ```
 
 3. **Present draft to user**: Print the draft and ask the user to edit or approve:

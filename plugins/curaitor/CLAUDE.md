@@ -2,6 +2,14 @@
 
 An article reading assistant that automates discovery and triage while keeping you in the loop for what matters.
 
+## AI-authored content disclosure
+
+When Claude generates content that will be visible to others (Slack posts, topic summaries, article notes) or any content that hasn't been explicitly reviewed and approved by the user, always append:
+
+> *Authored by Claude, pending human review*
+
+This applies to: Slack messages via the `p` verdict, auto-generated topic summaries, and any content posted to external services. It does NOT apply to internal notes (frontmatter, preference updates, accuracy stats) that are only consumed by the system.
+
 ## Commands
 
 - `/cu:triage` — Process Instapaper saves: fetch, evaluate, route to Obsidian, archive
