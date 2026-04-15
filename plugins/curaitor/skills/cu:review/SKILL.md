@@ -192,7 +192,7 @@ Do NOT use AskUserQuestion — it only supports 4 options max. Instead, print th
 **Topic suggestion**: Replace `t:topic` with a specific suggestion like `t:Variant Calling Methods` whenever possible. Infer from the article's tags, content, and matching existing topics. Only fall back to bare `t:topic` if no reasonable topic can be inferred.
 
 The user can type:
-- **`.`** (period) — accept "My suggestion" as the verdict
+- **`.`** (period) — accept "My suggestion" as the verdict (`.` is used instead of Enter because Claude Code's harness swallows empty prompts before they reach the agent)
 - A bare key: `y`, `n`, `c`, `r`, `skip`, `q`
 - **Bare `t`** — if a topic was suggested in the menu (e.g., `t:Variant Calling`), use that topic directly. Only ask which topic if no suggestion was shown or the user types `t <different topic>`.
 - **`! <comment>`** — deep read with initial context
