@@ -58,14 +58,14 @@ Review queue: 42 articles (7 groups + 5 standalone)
   "Caris Life Sciences multi-cancer early detection cfDNA"
   ... 4 more
   → My suggestion: t:MCED & Liquid Biopsy — all related, create topic
-  [enter] accept  [expand] show all  [n] recycle group  [skip] review individually
+  [.] accept  [expand] show all  [n] recycle group  [skip] review individually
 
 ━━ AI Agent Architecture (5) ━━
   "Platform Engineering with MCP"
   "Building Reliable Agents"
   ... 3 more
   → My suggestion: t:AI Agent Architecture — extend existing topic
-  [enter] accept  [expand] show all  [n] recycle group  [skip] review individually
+  [.] accept  [expand] show all  [n] recycle group  [skip] review individually
 
 ━━ Standalone articles (5) ━━
   1. "OpenCode vs Claude Code" — instapaper · ai-tooling
@@ -74,7 +74,7 @@ Review queue: 42 articles (7 groups + 5 standalone)
 ```
 
 3. **Group actions**: The user can act on an entire group with one verdict:
-   - **enter** — accept the suggestion (e.g., create/extend topic for all articles in group)
+   - **`.`** — accept the suggestion (e.g., create/extend topic for all articles in group)
    - **y** — move all to Inbox
    - **n** — recycle all (each counts as FP)
    - **t** or **t:Topic Name** — attach all to a topic
@@ -173,7 +173,7 @@ Topics: [[AI-Assisted Development]] (if any found)
 ## Why review?
 (from the Obsidian note)
 
-## My suggestion [enter to accept]
+## My suggestion [. to accept]
 (one sentence starting with the verdict key, e.g. "n — product announcement, no technical depth" or "y — novel method directly applicable to your cfDNA work" or "t:Variant Calling — new statistical framework")
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -192,7 +192,7 @@ Do NOT use AskUserQuestion — it only supports 4 options max. Instead, print th
 **Topic suggestion**: Replace `t:topic` with a specific suggestion like `t:Variant Calling Methods` whenever possible. Infer from the article's tags, content, and matching existing topics. Only fall back to bare `t:topic` if no reasonable topic can be inferred.
 
 The user can type:
-- **Enter** (empty) — accept "My suggestion" as the verdict
+- **`.`** (period) — accept "My suggestion" as the verdict
 - A bare key: `y`, `n`, `c`, `r`, `skip`, `q`
 - **Bare `t`** — if a topic was suggested in the menu (e.g., `t:Variant Calling`), use that topic directly. Only ask which topic if no suggestion was shown or the user types `t <different topic>`.
 - **`! <comment>`** — deep read with initial context
@@ -224,7 +224,7 @@ The user can type:
 
 ### Post to Slack flow (p)
 
-1. **Prompt for channel**: Print the default channel from `config/user-settings.yaml` (`default_slack_channel`), ask the user to type a channel name, user ID (for DM), or hit enter to accept the default.
+1. **Prompt for channel**: Print the default channel from `config/user-settings.yaml` (`default_slack_channel`), ask the user to type a channel name, user ID (for DM), or type `.` to accept the default.
 
 2. **Draft the message**: Compose a Slack message with:
    - Article title as a link
