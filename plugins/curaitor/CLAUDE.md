@@ -124,6 +124,12 @@ Every human verdict during `/cu:review` and `/cu:review-ignored` provides a sign
 - **True negative** (via `/cu:review-ignored`): user confirms article was correctly ignored → reinforces correct triage behavior
 - **False negative** (via `/cu:review-ignored`): user rescues a wrongly-ignored article → agent analyzes WHY and updates preferences to decrease future false-negative rate.
 
+**Net signal correction for multi-step paths:**
+- **Ignored → Review → Ignored** (rescued then recycled): final signal is **TN** (triage was right to ignore it originally), not FP
+- **Review → Ignored → Review** (recycled then rescued): final signal is **TP** (triage was right to flag it originally), not FN
+
+The final disposition determines the signal, not intermediate steps. Check `confidence` and `reviewed_ignored` frontmatter to detect these paths.
+
 ### Note format
 ```markdown
 ---
