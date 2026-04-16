@@ -370,3 +370,11 @@ Auth: `FEEDLY_TOKEN` in `.env`. Token is a JWT from Feedly's web session (`local
 # Discover from feeds daily at 6am
 0 6 * * * cd $CURAITOR_DIR && claude -p "/cu:discover" --permission-mode bypassPermissions >> ~/curaitor-discover.log 2>&1
 ```
+
+### Cron authentication
+
+Scheduled jobs need valid API credentials. The cron service auto-sets `SHELL`, `PATH`, and `HOME` and resolves the absolute `claude` path.
+
+- **Anthropic API**: Set `ANTHROPIC_API_KEY` in crontab env. Keys don't expire.
+- **AWS Bedrock**: SSO tokens expire (8-12h) and `aws sso login` is interactive. Either refresh SSO manually each day, or create a dedicated IAM user with only `bedrock:InvokeModel` permission and use static keys for cron.
+- **Google Vertex**: Set `GOOGLE_APPLICATION_CREDENTIALS` to a service account JSON. Doesn't expire.
