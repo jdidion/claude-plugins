@@ -195,6 +195,14 @@ The user can type:
 - **`.`** (period) — accept "My suggestion" as the verdict (`.` is used instead of Enter because Claude Code's harness swallows empty prompts before they reach the agent)
 - A bare key: `y`, `n`, `c`, `r`, `skip`, `q`
 - **Bare `t`** — if a topic was suggested in the menu (e.g., `t:Variant Calling`), use that topic directly. Only ask which topic if no suggestion was shown or the user types `t <different topic>`.
+- **`tl`** — list all available topics with numbers, then let the user pick by number or name. Example:
+  ```
+  Topics:
+    1. AI Agent Architecture (12 links)
+    2. Variant Calling Methods (8 links)
+    3. Rust Learning (5 links)
+  Type a number, name, or 'new <name>':
+  ```
 - **`! <comment>`** — deep read with initial context
 - **`? <question>`** — ask a question before deciding
 - **`t <topic name>`** — attach to existing topic or create new one
