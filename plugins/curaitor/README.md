@@ -378,29 +378,7 @@ curaitor/
 
 ## Roadmap
 
-### References
-
-* Stephen Turner's guide: https://blog.stephenturner.us/p/staying-current-in-data-science-and-computational-biology-2026
-
-### Sources
-- **Bluesky & Mastodon** — via [Sill](https://sill.social/) RSS feeds (see setup example under RSS sources above)
-- **Semantic Scholar** — "more like this" recommendations seeded from your Zotero library
-- **PubMed E-utilities** — targeted searches by topic or author
-- **Gmail newsletters** — scan for article links in newsletter emails via Google MCP
-- **LinkedIn notification emails** — extract shared article URLs from LinkedIn digest emails
-
-### Features
-- **Cron dashboard** — summary of what triage/discover found since last interactive session
-- **Deduplication** — cross-reference discovered articles against Zotero library and existing Obsidian notes
-- **Topic graph visualization** — Obsidian graph view of topics and their linked articles
-- **Reading stats** — track articles read, archived, time-to-triage, preference drift over time
-- **Multi-user** — shared topic notes and Tools & Projects catalog for teams
-- **Readwise integration** — sync highlights and annotations from Readwise Reader
-
-### Infrastructure
-- **GitHub Actions** — scheduled triage/discover as an alternative to local cron
-- **Obsidian Publish** — share curated reading lists and topic notes publicly
-- **MCP server** — expose curaitor as an MCP server for use from other Claude Code projects
+See [GitHub Issues](https://github.com/jdidion/curaitor/issues) for planned features and sources.
 
 ## License
 
