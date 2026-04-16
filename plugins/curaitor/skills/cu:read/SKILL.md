@@ -95,7 +95,7 @@ Continue until the user signals they're done by typing a verdict key or "done".
 After the discussion (or if the user gives a verdict at any point), print:
 
 ```
-r:zotero  t:topic  c:clip  b:bookmark  p:post  a:archive  skip  q:quit
+r:zotero  t:topic  c:clip  b:bookmark  p:post  n:recycle  skip  q:quit
 ```
 
 The user can type:
@@ -103,7 +103,7 @@ The user can type:
 - **t** or **t Topic Name** — Attach to a topic (existing or new), remove from Inbox
 - **c** — Clip: star GitHub repo + add to Tools & Projects catalog, remove from Inbox (for tools/libraries)
 - **p** — Post to Slack, then archive (same flow as `/cu:review` post — prompt for channel, draft message, send)
-- **a** or **a reason** — Archive: reviewed and not keeping. Logs to `Curaitor/Archive/Archive.md` with audit trail.
+- **n** — Recycle: read it, not keeping. Appends `- [title](url)` to `Curaitor/Recycle.md`. This is NOT a triage quality signal — triage correctly put it in Inbox.
 - **skip** — Leave in Inbox, move to next article
 - **q** — Quit, show session summary
 - Any other text — continue the discussion
@@ -115,16 +115,7 @@ The user can type:
 - **c** → Star GitHub repo (`gh api user/starred/OWNER/REPO -X PUT`), add to `Tools & Projects.md`, delete from `Curaitor/Inbox/`.
 - **b** → **Bookmark**: save the link to `Bookmarks.md` in Obsidian vault root (organized by category, same format as Tools & Projects). If `config/user-settings.yaml` has `bookmark_command`, run that instead. Delete from `Curaitor/Inbox/`.
 - **p** → **Post to Slack**: same flow as `/cu:review` — prompt for channel (default from `config/user-settings.yaml`), draft message, present for editing, send via `mcp__slack-mcp__send_slack_message`, then archive with reason "Posted to Slack #{channel}". Delete from `Curaitor/Inbox/`.
-- **a** → **Archive**: append an entry to `Curaitor/Archive/Archive.md` with title, URL, date, summary, questions asked during discussion, and reason (if provided). Then delete from `Curaitor/Inbox/`. Format:
-  ```markdown
-  ### {title}
-  - **URL**: {url}
-  - **Date reviewed**: {YYYY-MM-DD}
-  - **Category**: {category}
-  - **Summary**: {1-2 sentence summary}
-  - **Questions asked**: {list from discussion, or "none"}
-  - **Reason archived**: {user's reason if provided, otherwise "Reviewed — not keeping"}
-  ```
+- **n** → **Recycle**: append `- [title](url)` to `Curaitor/Recycle.md`, delete from `Curaitor/Inbox/`. NOT a triage quality signal — triage was correct to route this to Inbox.
 - **skip** → Leave in `Curaitor/Inbox/`, move to next article.
 - **q** → Stop, show session summary.
 
