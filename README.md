@@ -24,6 +24,7 @@ Then install individual plugins:
 | [slides](#slides) | MARP slide decks to PDF, PPTX, Google Slides | `/slides` |
 | [muck](#muck) | Fight AI slop: spot, guard, clean, learn voice | `/muck:spot` `/muck:guard` `/muck:clean` `/muck:voice` |
 | [curaitor](#curaitor) | Article discovery, triage, and review | `/cu:triage` `/cu:discover` `/cu:review` `/cu:read` |
+| [handoff](#handoff) | AirDrop-style context transfer + interactive teams | `/handoff:send` `/handoff:inbox` `/handoff:team` `/handoff:bridge` |
 | [offload](#offload) | Session memory, prompt logging, context analysis | `/offload:context` `/offload:export` `/offload:summarize` |
 
 ---
@@ -115,6 +116,52 @@ AI-powered article discovery, triage, and interactive review. Automates finding 
 /cu:review          # Interactive review session
 /cu:read            # Deep reading with RAG discussion
 /cu:review-ignored  # Check for false negatives
+```
+
+---
+
+### handoff
+
+AirDrop-style context transfer between Claude Code sessions, plus interactive team coordination with shared messaging and tasks.
+
+**Commands:**
+
+| Command | Purpose | When to use |
+|---------|---------|-------------|
+| `/handoff:send` | Send context to another session | "Pass this to the Prism session" |
+| `/handoff:inbox` | Check for incoming handoffs | Start of session, or when notified |
+| `/handoff:register` | Register session for discovery | Once per session (or auto via hook) |
+| `/handoff:team` | Create/manage interactive teams | Parallel work across multiple sessions |
+| `/handoff:bridge` | Join a running team externally | Connect to a team from any cmux pane |
+
+**Features:**
+- Structured markdown handoff files (objective, context, files, next steps)
+- Delivery via cmux send (types into target session) + OS notification
+- File-based team messaging compatible with Claude Code's native Agent Teams
+- Bridge script lets external sessions participate in native team inboxes
+- Team checkpoint/resume for long-running coordination
+- YAML team definitions for repeatable setups
+- Dynamic membership: add/remove teammates at any time
+
+**Requirements:**
+- [cmux](https://cmux.dev) (for cross-session delivery; file-only mode works without)
+- Python 3
+
+**Usage:**
+```
+/handoff:register prism-dev                                    # Register this session
+/handoff:send "review variant filter changes" --to curaitor    # Send context
+/handoff:inbox                                                 # Check incoming
+
+/handoff:team create sgnipt-sprint                             # Create a team
+/handoff:team add variant-filter --cwd ~/projects/sgnipt       # Add interactive teammate
+/handoff:bridge sgnipt-sprint pipeline-tests                   # Join from another session
+```
+
+**Install:**
+```
+/plugin marketplace add jdidion/claude-plugins
+/plugin install handoff@jdidion-plugins
 ```
 
 ---
