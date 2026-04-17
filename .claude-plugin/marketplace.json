@@ -28,6 +28,15 @@
       "keywords": ["writing", "slop", "editing", "humanize", "ai-detection", "voice"]
     },
     {
+      "name": "handoff",
+      "source": "./plugins/handoff",
+      "description": "AirDrop-style context handoff between Claude Code sessions running in cmux",
+      "version": "0.1.0",
+      "author": { "name": "John Didion" },
+      "license": "MIT",
+      "keywords": ["handoff", "context", "multi-session", "cmux", "coordination"]
+    },
+    {
       "name": "offload",
       "source": "./plugins/offload",
       "description": "Session memory persistence, prompt logging, and context analysis for Claude Code",

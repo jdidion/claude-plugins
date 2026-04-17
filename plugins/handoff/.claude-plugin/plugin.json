@@ -1,0 +1,25 @@
+{
+  "name": "handoff",
+  "description": "AirDrop-style context handoff between Claude Code sessions running in cmux",
+  "version": "0.1.0",
+  "author": { "name": "John Didion" },
+  "license": "MIT",
+  "keywords": ["handoff", "context", "multi-session", "cmux", "coordination"],
+  "skills": [
+    {
+      "name": "send",
+      "description": "Send context to another Claude Code session",
+      "path": "skills/send/skill.md"
+    },
+    {
+      "name": "inbox",
+      "description": "Check for incoming handoffs",
+      "path": "skills/inbox/skill.md"
+    },
+    {
+      "name": "register",
+      "description": "Register this session for handoff discovery",
+      "path": "skills/register/skill.md"
+    }
+  ]
+}
