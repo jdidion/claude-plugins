@@ -48,8 +48,7 @@ curaitor learns your interests over time. Every time you give feedback during `/
 
 | Key | Action |
 |-----|--------|
-| `!` | **Deep read** — save permanently, discuss interactively, save discussion notes |
-| `?` | **Discuss** — ask questions about the article before deciding |
+| `d` | **Deep read** — save permanently, discuss interactively, save discussion notes |
 | `y` | Interested — move to Inbox. Star GitHub repo if detected. |
 | `t` | **Topic** — attach to an existing or new topic in Obsidian |
 | `c` | **Clip** — add repo/tool to Tools & Projects catalog, delete article |
@@ -59,7 +58,7 @@ curaitor learns your interests over time. Every time you give feedback during `/
 | `skip` | Leave in Curaitor/Review/ for later |
 | `q` | Quit review session |
 
-Inline commands: `! compare to our pipeline`, `? does this support hg38?`, `t Variant Calling`
+Inline commands: `d compare to our pipeline`, just type the question, e.g. `does this support hg38?`, `t Variant Calling`
 
 ### Read verdicts (`/cu:read`)
 

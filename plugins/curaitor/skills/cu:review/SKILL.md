@@ -186,7 +186,7 @@ Do NOT use AskUserQuestion — it only supports 4 options max. Instead, print th
 **CRITICAL: Always print ALL menu items.** Never abbreviate or truncate the menu. Conditional items: `c` (only when repo/tool detected), `r` (only for publications — DOI, bioRxiv, arXiv, journal articles). Every other item MUST always appear:
 
 ```
-!:deep-read  ?:discuss  y:inbox  t:topic  c:clip  b:bookmark  r:zotero  p:post  n:recycle  skip  q:quit
+d:deep-read  y:inbox  t:topic  c:clip  b:bookmark  r:zotero  p:post  n:recycle  skip  q:quit
 ```
 
 **Topic suggestion**: Replace `t:topic` with a specific suggestion like `t:Variant Calling Methods` whenever possible. Infer from the article's tags, content, and matching existing topics. Only fall back to bare `t:topic` if no reasonable topic can be inferred.
@@ -203,8 +203,8 @@ The user can type:
     3. Rust Learning (5 links)
   Type a number, name, or 'new <name>':
   ```
-- **`! <comment>`** — deep read with initial context
-- **`? <question>`** — ask a question before deciding
+- **`d <comment>`** — deep read with initial context
+- Questions: just type them. No prefix needed. E.g., `<question>`** — ask a question before deciding
 - **`t <topic name>`** — attach to existing topic or create new one
 - **`n <reason>`** — recycle with a reason (e.g., `n not relevant to current work`)
 - Any other free text — treated as a question, answer it, re-show menu
@@ -301,7 +301,7 @@ The review agent should NEVER add articles to `Curaitor/Ignored/`. Only the tria
 
 ### f. Star GitHub repos (on y or !)
 
-If a GitHub repo was detected and the user chose `y` or `!`:
+If a GitHub repo was detected and the user chose `y` or `d`:
 1. Star the repo:
    ```bash
    gh api user/starred/OWNER/REPO -X PUT
@@ -341,7 +341,7 @@ Append the new entry under the appropriate category. If the category doesn't exi
 
 ### e. Deep read mode (!)
 
-When the user types `!`, this means "I'm interested AND I want to read and discuss this right now":
+When the user types `d`, this means "I'm interested AND I want to read and discuss this right now":
 
 1. **Save permanently:**
    - If it's a paper (DOI, bioRxiv, arXiv, nature.com, etc.): save to Zotero via API

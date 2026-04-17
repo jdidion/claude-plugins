@@ -120,7 +120,7 @@ All triage folders live under `Curaitor/` in the Obsidian vault:
 
 ### Triage quality signals
 Every human verdict during `/cu:review` and `/cu:review-ignored` provides a signal about triage quality:
-- **True positive**: article kept during review (y, !, t, c, b, r, p, skip) — triage was right to flag it for review
+- **True positive**: article kept during review (y, d, t, c, b, r, p, skip) — triage was right to flag it for review
 - **False positive**: article recycled during review (n) — triage shouldn't have put this in Review. Agent analyzes WHY and updates preferences to decrease future false-positive rate.
 - **True negative** (via `/cu:review-ignored`): user confirms article was correctly ignored → reinforces correct triage behavior
 - **False negative** (via `/cu:review-ignored`): user rescues a wrongly-ignored article → agent analyzes WHY and updates preferences to decrease future false-negative rate.
@@ -192,7 +192,7 @@ NEVER use AskUserQuestion during `/cu:review` or `/cu:review-ignored`. It only s
 
 Menu (printed as text, not AskUserQuestion):
 ```
-!:deep-read  ?:discuss  y:inbox  t:topic  c:clip  b:bookmark  r:zotero  p:post  n:recycle  skip  q:quit
+d:deep-read  y:inbox  t:topic  c:clip  b:bookmark  r:zotero  p:post  n:recycle  skip  q:quit
 ```
 
 Users can type inline commands:
@@ -334,7 +334,7 @@ When triaging or discovering a video (YouTube, Vimeo) or podcast episode:
 5. **If neither**: route to `Curaitor/Review/` as uncertain — the user can decide interactively
 6. **Frontmatter**: add `media_type: video` or `media_type: podcast` so review agent knows to expect non-text content
 
-During `/cu:review` deep read (`!`), fetch the transcript for RAG discussion rather than the page HTML.
+During `/cu:review` deep read (`d`), fetch the transcript for RAG discussion rather than the page HTML.
 
 ## PDF reading
 
