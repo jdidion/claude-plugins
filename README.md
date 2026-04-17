@@ -24,7 +24,7 @@ Then install individual plugins:
 | [slides](#slides) | MARP slide decks to PDF, PPTX, Google Slides | `/slides` |
 | [muck](#muck) | Fight AI slop: spot, guard, clean, learn voice | `/muck:spot` `/muck:guard` `/muck:clean` `/muck:voice` |
 | [curaitor](#curaitor) | Article discovery, triage, and review | `/cu:triage` `/cu:discover` `/cu:review` `/cu:read` |
-| [offload-context](#offload-context) | Save session learnings before compaction | `/offload-context` + hooks |
+| [offload](#offload) | Session memory, prompt logging, context analysis | `/offload:context` `/offload:export` `/offload:summarize` |
 
 ---
 
@@ -119,15 +119,16 @@ AI-powered article discovery, triage, and interactive review. Automates finding 
 
 ---
 
-### offload-context
+### offload
 
-Save session learnings to auto-memory before context compaction or session end. Runs as a manual skill and as automated hooks on PreCompact and SessionEnd.
+Session memory persistence, prompt logging, and context analysis. Hooks fire automatically on PreCompact, SessionEnd, and UserPromptSubmit (prompt logging is opt-in).
 
 **Features:**
 - PreCompact hook injects git state + reminder so learnings survive compaction
 - SessionEnd hook persists session snapshot for future pickup
-- Manual `/offload-context` skill for explicit save + compact
-- Shell-based state gathering (no token cost for git inspection)
+- Opt-in prompt logging to JSONL for trend analysis
+- Export prompts as JSONL, CSV, or Markdown
+- Summarize offloaded context globally or per project/session
 
 **Requirements:**
 - `git` and `jq` on PATH
@@ -136,8 +137,12 @@ Hooks activate automatically when the plugin is enabled — no manual config nee
 
 **Usage:**
 ```
-/offload-context              # Save learnings + compact
-/offload-context --no-compact  # Save learnings only
+/offload:context                         # Save learnings + compact
+/offload:context --enable-prompts        # Turn on prompt logging
+/offload:export --format csv             # Export prompts as CSV
+/offload:export --project myapp          # Filter by project
+/offload:summarize                       # Global summary
+/offload:summarize --project myapp       # Project summary
 ```
 
 ---

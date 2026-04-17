@@ -1,0 +1,8 @@
+{
+  "name": "offload",
+  "version": "2.0.0",
+  "description": "Session memory persistence, prompt logging, and context analysis for Claude Code",
+  "author": { "name": "John Didion" },
+  "license": "MIT",
+  "keywords": ["context", "memory", "compaction", "session", "offload", "prompts", "logging"]
+}

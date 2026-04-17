@@ -1,7 +1,5 @@
 #!/bin/bash
 # PreCompact hook: inject session state into context before compaction.
-# The injected systemMessage survives compaction, preserving git state
-# and reminding Claude to save unsaved learnings.
 set -euo pipefail
 
 INPUT=$(cat)
