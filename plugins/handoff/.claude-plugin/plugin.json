@@ -1,10 +1,10 @@
 {
   "name": "handoff",
-  "description": "AirDrop-style context handoff between Claude Code sessions running in cmux",
-  "version": "0.1.0",
+  "description": "AirDrop-style context handoff and interactive team coordination for Claude Code sessions in cmux",
+  "version": "0.2.0",
   "author": { "name": "John Didion" },
   "license": "MIT",
-  "keywords": ["handoff", "context", "multi-session", "cmux", "coordination"],
+  "keywords": ["handoff", "context", "multi-session", "cmux", "coordination", "teams", "messaging"],
   "skills": [
     {
       "name": "send",
@@ -20,6 +20,16 @@
       "name": "register",
       "description": "Register this session for handoff discovery",
       "path": "skills/register/skill.md"
+    },
+    {
+      "name": "team",
+      "description": "Create and manage interactive teams with shared messaging and tasks",
+      "path": "skills/team/skill.md"
+    },
+    {
+      "name": "bridge",
+      "description": "Connect this session to an existing team as an external member",
+      "path": "skills/bridge/skill.md"
     }
   ]
 }
