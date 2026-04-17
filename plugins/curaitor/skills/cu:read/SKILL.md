@@ -98,9 +98,14 @@ After the discussion (or if the user gives a verdict at any point), print:
 r:zotero  t:topic  c:clip  b:bookmark  p:post  n:recycle  skip  q:quit
 ```
 
+**Topic suggestion**: Replace `t:topic` with a specific suggestion like `t:Variant Calling Methods` whenever possible. Infer from the article's tags, content, and matching existing topics.
+
 The user can type:
+- **`.`** (period) — accept "My suggestion" as the verdict (`.` is used instead of Enter because Claude Code's harness swallows empty prompts)
 - **r** — Save to Zotero (for publications/papers), then remove from Inbox
-- **t** or **t Topic Name** — Attach to a topic (existing or new), remove from Inbox
+- **Bare `t`** — if a topic was suggested in the menu, use that topic directly. Only ask which topic if no suggestion was shown or the user types `t <different topic>`.
+- **`tl`** — list all available topics with numbers, then let the user pick by number or name
+- **t Topic Name** — Attach to a specific topic (existing or new), remove from Inbox
 - **c** — Clip: star GitHub repo + add to Tools & Projects catalog, remove from Inbox (for tools/libraries)
 - **p** — Post to Slack, then archive (same flow as `/cu:review` post — prompt for channel, draft message, send)
 - **n** — Recycle: read it, not keeping. Appends `- [title](url)` to `Curaitor/Recycle.md`. This is NOT a triage quality signal — triage correctly put it in Inbox.
