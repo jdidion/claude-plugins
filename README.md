@@ -24,6 +24,7 @@ Then install individual plugins:
 | [slides](#slides) | MARP slide decks to PDF, PPTX, Google Slides | `/slides` |
 | [muck](#muck) | Fight AI slop: spot, guard, clean, learn voice | `/muck:spot` `/muck:guard` `/muck:clean` `/muck:voice` |
 | [curaitor](#curaitor) | Article discovery, triage, and review | `/cu:triage` `/cu:discover` `/cu:review` `/cu:read` |
+| [offload-context](#offload-context) | Save session learnings before compaction | `/offload-context` + hooks |
 
 ---
 
@@ -115,6 +116,31 @@ AI-powered article discovery, triage, and interactive review. Automates finding 
 /cu:read            # Deep reading with RAG discussion
 /cu:review-ignored  # Check for false negatives
 ```
+
+---
+
+### offload-context
+
+Save session learnings to auto-memory before context compaction or session end. Runs as a manual skill and as automated hooks on PreCompact and SessionEnd.
+
+**Features:**
+- PreCompact hook injects git state + reminder so learnings survive compaction
+- SessionEnd hook persists session snapshot for future pickup
+- Manual `/offload-context` skill for explicit save + compact
+- Shell-based state gathering (no token cost for git inspection)
+
+**Requirements:**
+- `git` and `jq` on PATH
+
+Hooks activate automatically when the plugin is enabled — no manual config needed.
+
+**Usage:**
+```
+/offload-context              # Save learnings + compact
+/offload-context --no-compact  # Save learnings only
+```
+
+---
 
 ## License
 

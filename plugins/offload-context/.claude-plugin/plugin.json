@@ -1,0 +1,8 @@
+{
+  "name": "offload-context",
+  "version": "1.0.0",
+  "description": "Save session learnings to auto-memory before context compaction or session end",
+  "author": { "name": "John Didion" },
+  "license": "MIT",
+  "keywords": ["context", "memory", "compaction", "session", "offload"]
+}
