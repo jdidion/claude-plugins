@@ -26,6 +26,15 @@
       "author": { "name": "John Didion" },
       "license": "MIT",
       "keywords": ["writing", "slop", "editing", "humanize", "ai-detection", "voice"]
+    },
+    {
+      "name": "offload",
+      "source": "./plugins/offload",
+      "description": "Session memory persistence, prompt logging, and context analysis for Claude Code",
+      "version": "2.0.0",
+      "author": { "name": "John Didion" },
+      "license": "MIT",
+      "keywords": ["context", "memory", "compaction", "session", "offload", "prompts", "logging"]
     }
   ]
 }
