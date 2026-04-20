@@ -26,7 +26,7 @@ For each feed in `feeds.yaml`:
 
 ## Step 3: Deduplicate
 
-Check Obsidian for existing notes with matching URLs. Use `python3 scripts/triage-write.py --dedup-only --urls URL1 URL2 ...` for batch checking, or `mcp__obsidian__search_notes` for individual lookups. Exact URL duplicates are immediately recycled — append `- [title](url) (duplicate)` to `Curaitor/Recycle.md`. Do NOT create notes for duplicates.
+Check Obsidian for existing notes **and the Recycle log** with matching URLs. Use `python3 scripts/triage-write.py --dedup-only --urls URL1 URL2 ...` for batch checking — it checks both live notes and `Curaitor/Recycle.md`, and returns `duplicate_from_note` / `duplicate_from_recycle` counts. Exact URL duplicates are immediately recycled — append `- [title](url) (duplicate)` or `(duplicate from Recycle)` to `Curaitor/Recycle.md`. Do NOT create notes for duplicates. A rising `duplicate_from_recycle` count indicates dedup regression — investigate if it exceeds ~5% of inflow.
 
 ## Step 4: Evaluate each article
 
