@@ -80,7 +80,7 @@ There are two ways to run curaitor: as a **Claude Code plugin** (direct) or in a
 
 - [Claude Code](https://claude.ai/claude-code) CLI
 - [Obsidian](https://obsidian.md) with an [MCP server](https://github.com/modelcontextprotocol/servers) configured
-- Python 3 with `requests-oauthlib` and `pyyaml`
+- Python 3 with deps in `requirements.txt` (`requests-oauthlib`, `pyyaml`, `certifi`)
 - [cmux](https://github.com/manaflow-ai/cmux) (optional, for interactive browser review)
 - [Docker](https://www.docker.com/) (optional, for sandboxed execution)
 
@@ -99,7 +99,7 @@ git clone https://github.com/jdidion/curaitor.git ~/projects/curaitor
 #### 2. Install dependencies
 
 ```bash
-pip3 install requests-oauthlib pyyaml
+pip3 install -r requirements.txt
 ```
 
 #### 3. Configure credentials
@@ -341,6 +341,30 @@ Setup:
 ```
 
 Sill articles will flow through `/cu:discover` like any other RSS feed, with three-tier routing based on your preferences.
+
+## Troubleshooting
+
+### SSL / `CERTIFICATE_VERIFY_FAILED` errors on macOS
+
+Python 3.14 tightened SSL verification and rejects malformed `basicConstraints`
+extensions that can live in the macOS keychain — often residue from a
+TLS-intercepting proxy like **Netskope** even after the proxy is disabled.
+
+The plugin's scripts already route through `certifi`'s CA bundle via
+`scripts/_ssl_util.py`, which avoids the system keychain entirely. If you still
+see verify errors:
+
+- Make sure `certifi` is installed (`pip3 install -r requirements.txt`).
+- Confirm you're running the expected Python (`bash scripts/find-python.sh`).
+- If a corporate proxy is active, exporting `SSL_CERT_FILE` and
+  `REQUESTS_CA_BUNDLE` to the proxy's combined bundle will override certifi.
+
+### `FEEDLY_TOKEN` missing / expired
+
+`/cu:discover` will still run without `FEEDLY_TOKEN` — it just skips the
+post-discovery "mark as read in Feedly" step. Refresh the token by logging
+into Feedly in cmux browser and pulling it from
+`localStorage['feedly.session']`.
 
 ## Architecture
 

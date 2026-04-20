@@ -15,6 +15,8 @@ Read from `config/`:
 
 If `feeds.yaml` has no feeds configured, tell the user to export OPML from Feedly or add feeds manually.
 
+**FEEDLY_TOKEN check**: If `.env` is missing `FEEDLY_TOKEN`, surface a one-line warning in the final summary (Step 6) noting that Step 7 will be skipped. Do not block discovery — the token is only needed to mark articles read in Feedly's UI.
+
 ## Step 2: Fetch articles from each feed
 
 For each feed in `feeds.yaml`:

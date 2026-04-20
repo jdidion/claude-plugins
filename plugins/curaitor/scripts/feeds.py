@@ -18,6 +18,11 @@ from datetime import datetime, timedelta, timezone
 
 import yaml
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _ssl_util import build_ssl_context
+
+_SSL_CONTEXT = build_ssl_context()
+
 
 def parse_date(date_str):
     """Best-effort parse of RSS date strings."""
@@ -42,7 +47,7 @@ def fetch_feed(url, timeout=30, user_agent=None):
     try:
         ua = user_agent or 'Mozilla/5.0 (compatible; curaitor/1.0)'
         req = urllib.request.Request(url, headers={'User-Agent': ua})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout, context=_SSL_CONTEXT) as resp:
             data = resp.read()
     except Exception as e:
         return [], str(e)

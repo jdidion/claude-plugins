@@ -20,6 +20,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _ssl_util import build_ssl_context
+
+_SSL_CONTEXT = build_ssl_context()
+
 FEEDLY_API = "https://cloud.feedly.com"
 
 
@@ -44,7 +49,7 @@ def api_request(method, path, token, data=None):
     body = json.dumps(data).encode() if data else None
     req = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req, context=_SSL_CONTEXT) as resp:
             raw = resp.read().decode()
             return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as e:

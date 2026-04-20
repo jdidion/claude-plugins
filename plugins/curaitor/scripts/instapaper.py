@@ -16,6 +16,11 @@ import sys
 import html
 import re
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _ssl_util import install_certifi_env
+
+install_certifi_env()
+
 from requests_oauthlib import OAuth1Session
 
 
