@@ -8,6 +8,9 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
+import pod  # noqa: E402  # pyright: ignore[reportMissingImports]
+
 HANDOFFS_DIR = Path.home() / ".claude" / "handoffs"
 REGISTRY_FILE = HANDOFFS_DIR / "registry.json"
 INBOX_DIR = HANDOFFS_DIR / "inbox"
@@ -139,24 +142,34 @@ def cmd_inbox():
         return
 
     files = sorted(inbox_path.glob("*.md"), reverse=True)
+    seen = pod.SeenStore()
     items = []
     for f in files:
-        text = f.read_text()
-        # Parse frontmatter
-        meta = {}
-        if text.startswith("---"):
-            parts = text.split("---", 2)
-            if len(parts) >= 3:
-                for line in parts[1].strip().split("\n"):
-                    if ":" in line:
-                        k, v = line.split(":", 1)
-                        meta[k.strip()] = v.strip()
+        text = f.read_text(encoding="utf-8")
+        try:
+            parsed = pod.parse_shape_a(text)
+        except ValueError:
+            items.append({
+                "file": str(f),
+                "name": f.name,
+                "from": "unknown",
+                "timestamp": "",
+                "slug": f.stem,
+                "format": "invalid",
+            })
+            continue
+        envelope = parsed["envelope"]
+        pod_id = str(envelope.get("id") or "")
         items.append({
             "file": str(f),
             "name": f.name,
-            "from": meta.get("from", "unknown"),
-            "timestamp": meta.get("timestamp", ""),
-            "slug": meta.get("slug", f.stem),
+            "id": pod_id,
+            "from": str(envelope.get("from", "unknown")),
+            "timestamp": str(envelope.get("createdAt", "")),
+            "slug": str(parsed["payload_meta"].get("slug", f.stem)),
+            "format": "legacy" if parsed["legacy"] else "pod",
+            "fingerprint_ok": parsed["fingerprint_ok"],
+            "already_seen": bool(pod_id) and seen.has(pod_id),
         })
     print(json.dumps(items, indent=2))
 
