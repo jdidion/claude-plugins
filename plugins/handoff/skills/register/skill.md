@@ -16,10 +16,12 @@ Determine a friendly name:
 - If the user provided one, use it
 - Otherwise, use the basename of the current working directory (e.g., `curaitor-review`, `sgnipt-research`)
 
+The `from` and `to` fields in Pod envelopes are free-form strings — whatever name you register here is what other sessions will address you by.
+
 ## Step 2: Register
 
 ```bash
-python3 $PLUGIN_ROOT/scripts/registry.py register "<name>" "<surface_ref>" "<workspace_ref>"
+python3 $CLAUDE_PLUGIN_ROOT/scripts/registry.py register "<name>" "<surface_ref>" "<workspace_ref>"
 ```
 
 This writes to `~/.claude/handoffs/registry.json`:
@@ -53,19 +55,14 @@ Registered as "<name>"
 
 Other sessions can now send handoffs with:
   /handoff:send --to <name>
+
+Pods will land as ~/.claude/handoffs/inbox/<name>/<ulid>-<slug>.md
 ```
 
 ## Auto-registration
 
 This skill can also be triggered automatically via a SessionStart hook.
-To enable, add to ~/.claude/settings.json hooks.SessionStart:
-```json
-{
-  "type": "command",
-  "command": "python3 <plugin-root>/scripts/registry.py auto-register",
-  "timeout": 5
-}
-```
+The plugin ships with this hook enabled by default (see `hooks/hooks.json`).
 
 ## Rules
 - If the name is already registered, update it (session refs change between restarts)
