@@ -1,8 +1,20 @@
 {
   "name": "slides",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Create MARP slide decks and convert to PDF, HTML, PPTX, and Google Slides with visual validation",
   "author": { "name": "John Didion" },
   "license": "MIT",
-  "keywords": ["slides", "marp", "pptx", "presentations", "mermaid"]
+  "keywords": ["slides", "marp", "pptx", "presentations", "mermaid"],
+  "skills": [
+    {
+      "name": "slides",
+      "description": "Create, convert, and validate MARP slide decks",
+      "path": "skills/slides/SKILL.md"
+    },
+    {
+      "name": "template",
+      "description": "Configure a default PPTX template for PPTX output",
+      "path": "skills/template/SKILL.md"
+    }
+  ]
 }

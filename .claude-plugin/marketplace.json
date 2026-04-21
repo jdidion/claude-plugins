@@ -13,7 +13,7 @@
       "name": "slides",
       "source": "./plugins/slides",
       "description": "Create MARP slide decks and convert to PDF, HTML, PPTX, and Google Slides with visual validation",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "author": { "name": "John Didion" },
       "license": "MIT",
       "keywords": ["slides", "marp", "pptx", "presentations", "mermaid"]
