@@ -18,6 +18,7 @@ This applies to: Slack messages via the `p` verdict, auto-generated topic summar
 - `/cu:read` — Deep reading: read Inbox articles with full summary, RAG discussion, save or discard
 - `/cu:review-ignored` — Check Ignored folder for false negatives
 - `/cu:status` — Quick dashboard: queue counts, cron health, accuracy metrics, next actions
+- `/cu:dashboard` — Launch the curaitor webapp (hono/node server) and open it in cmux browser
 - `/cu:seed-preferences` — One-time: analyze Zotero + Instapaper history to build initial preferences
 
 ## Setup
