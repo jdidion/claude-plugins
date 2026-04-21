@@ -4,7 +4,7 @@ default_slack_channel: "#general"
 
 # Obsidian vault paths for specific features. All paths are relative to the
 # vault root. Skills should read from this block rather than hardcoding paths.
-# Tracking ticket for threading this through all skills: see issue tracker.
+# Tracking ticket for threading this through all skills: https://github.com/jdidion/claude-plugins/issues/13
 vault_paths:
   journal_club: "Journal Club Ideas.md"
   bookmarks: "Bookmarks.md"
