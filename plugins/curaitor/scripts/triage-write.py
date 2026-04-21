@@ -94,8 +94,32 @@ def normalize_url(url):
 
 # --- Deduplication ---
 
+# Matches Recycle.md lines: "- [title](url) ..." (url may be bare or surrounded by <>)
+_RECYCLE_LINE = re.compile(r'^\s*-\s+\[[^\]]*\]\(\s*<?([^)\s>]+)>?\s*\)')
+
+
+def _parse_recycle(recycle_path):
+    """Return normalized URLs from a Curaitor/Recycle.md file."""
+    urls = set()
+    if not os.path.isfile(recycle_path):
+        return urls
+    try:
+        with open(recycle_path, encoding='utf-8') as fh:
+            for line in fh:
+                m = _RECYCLE_LINE.match(line)
+                if m:
+                    urls.add(normalize_url(m.group(1)))
+    except (OSError, UnicodeDecodeError):
+        pass
+    return urls
+
+
 def build_url_index(vault):
-    """Scan all triage folders and build a set of normalized URLs."""
+    """Scan all triage folders + Recycle.md and build a set of normalized URLs.
+
+    Articles that were previously recycled (duplicates, slop, no-source)
+    should not re-triage — so Recycle.md is part of the known-URL set.
+    """
     known = set()
     folders = [
         'Inbox', 'Review', 'Ignored', 'Library',
@@ -110,7 +134,7 @@ def build_url_index(vault):
                 continue
             filepath = os.path.join(path, f)
             try:
-                with open(filepath) as fh:
+                with open(filepath, encoding='utf-8') as fh:
                     # Only read first 500 chars — URL is in frontmatter
                     head = fh.read(500)
                 m = re.search(r'^url:\s*(.+)$', head, re.MULTILINE)
@@ -119,7 +143,14 @@ def build_url_index(vault):
                     known.add(normalize_url(url))
             except (OSError, UnicodeDecodeError):
                 continue
+
+    known |= _parse_recycle(os.path.join(vault, 'Curaitor', 'Recycle.md'))
     return known
+
+
+def build_recycle_index(vault):
+    """Return only the recycled URLs, for distinguishing duplicate sources."""
+    return _parse_recycle(os.path.join(vault, 'Curaitor', 'Recycle.md'))
 
 
 # --- Filename sanitization ---
@@ -220,14 +251,16 @@ def write_note(vault, folder, filename, frontmatter, body):
 def cmd_write(args):
     """Write triage results to Obsidian."""
     vault = find_vault()
-    known_urls = build_url_index(vault)
+    recycled_urls = build_recycle_index(vault)
+    known_urls = build_url_index(vault)  # includes recycled + vault notes
 
     articles = json.load(sys.stdin)
     if not isinstance(articles, list):
         articles = [articles]
 
     written = 0
-    recycled_dup = 0
+    recycled_dup_note = 0
+    recycled_dup_recycle = 0
     skipped_nourl = 0
     errors = 0
     results = {'inbox': [], 'review': [], 'ignored': []}
@@ -244,11 +277,17 @@ def cmd_write(args):
 
         norm = normalize_url(url)
         if norm in known_urls:
-            # Duplicate — recycle immediately, don't create a note
+            # Duplicate — recycle immediately, don't create a note.
+            # Distinguish whether it matched a live vault note or was previously recycled.
             title = article.get('title', url)
-            with open(recycle_path, 'a') as rf:
-                rf.write(f"- [{title}]({url}) (duplicate)\n")
-            recycled_dup += 1
+            from_recycle = norm in recycled_urls
+            tag = '(duplicate from Recycle)' if from_recycle else '(duplicate)'
+            with open(recycle_path, 'a', encoding='utf-8') as rf:
+                rf.write(f"- [{title}]({url}) {tag}\n")
+            if from_recycle:
+                recycled_dup_recycle += 1
+            else:
+                recycled_dup_note += 1
             continue
 
         try:
@@ -269,7 +308,9 @@ def cmd_write(args):
     output = {
         'vault': vault,
         'written': written,
-        'recycled_duplicate': recycled_dup,
+        'recycled_duplicate': recycled_dup_note + recycled_dup_recycle,
+        'recycled_duplicate_from_note': recycled_dup_note,
+        'recycled_duplicate_from_recycle': recycled_dup_recycle,
         'skipped_no_url': skipped_nourl,
         'errors': errors,
         'total_input': len(articles),
@@ -280,9 +321,10 @@ def cmd_write(args):
 
 
 def cmd_dedup(args):
-    """Check which URLs already exist in the vault."""
+    """Check which URLs already exist in the vault or Recycle.md."""
     vault = find_vault()
-    known_urls = build_url_index(vault)
+    recycled_urls = build_recycle_index(vault)
+    known_urls = build_url_index(vault)  # includes recycled
 
     # Collect input URLs
     if args.urls_file:
@@ -294,23 +336,34 @@ def cmd_dedup(args):
         urls = [line.strip() for line in sys.stdin if line.strip()]
 
     new_urls = []
-    dup_urls = []
+    dup_note_urls = []
+    dup_recycle_urls = []
     for url in urls:
         norm = normalize_url(url)
-        if norm in known_urls:
-            dup_urls.append(url)
+        if norm in recycled_urls:
+            dup_recycle_urls.append(url)
+        elif norm in known_urls:
+            dup_note_urls.append(url)
         else:
             new_urls.append(url)
 
     output = {
         'total': len(urls),
         'new': len(new_urls),
-        'duplicate': len(dup_urls),
+        'duplicate': len(dup_note_urls) + len(dup_recycle_urls),
+        'duplicate_from_note': len(dup_note_urls),
+        'duplicate_from_recycle': len(dup_recycle_urls),
         'new_urls': new_urls,
     }
     json.dump(output, sys.stdout, indent=2)
     print(file=sys.stdout)
-    print(f"{len(new_urls)} new, {len(dup_urls)} duplicates out of {len(urls)}", file=sys.stderr)
+    print(
+        f"{len(new_urls)} new, "
+        f"{len(dup_note_urls)} duplicates (existing notes), "
+        f"{len(dup_recycle_urls)} duplicates (from Recycle.md), "
+        f"out of {len(urls)}",
+        file=sys.stderr,
+    )
 
 
 def main():

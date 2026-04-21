@@ -120,7 +120,7 @@ Match against preferences in `reading-prefs.md` to determine confidence level.
 
 ## Step 3.5: Deduplicate and recycle duplicates
 
-Before routing, check each article URL against existing vault notes. Use `python3 scripts/triage-write.py --dedup-only --urls URL1 URL2 ...` or check manually. Exact URL duplicates are immediately recycled — append `- [title](url) (duplicate)` to `Curaitor/Recycle.md`. Do NOT create notes in Ignored for duplicates. Duplicates are not triage quality signals.
+Before routing, check each article URL against existing vault notes **and the Recycle log**. Use `python3 scripts/triage-write.py --dedup-only --urls URL1 URL2 ...` — it checks both live notes and `Curaitor/Recycle.md`, reporting `duplicate_from_note` vs `duplicate_from_recycle` separately. Exact URL duplicates are immediately recycled — append `- [title](url) (duplicate)` (or `(duplicate from Recycle)` for re-surfaced items) to `Curaitor/Recycle.md`. Do NOT create notes in Ignored for duplicates. Duplicates are not triage quality signals.
 
 ## Step 4: Route to Obsidian
 

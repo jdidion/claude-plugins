@@ -70,29 +70,37 @@ def save_stats(stats):
 
 
 def compute_metrics(stats):
-    """Compute precision, recall, and total reviewed from stats."""
+    """Compute precision, recall, and total reviewed from stats.
+
+    The `duplicate` signal counts articles that re-surfaced after already
+    being recycled. It's tracked separately from TP/FP/TN/FN so it doesn't
+    skew precision/recall — a rising duplicate rate signals dedup regression.
+    """
     lifetime = stats.get('lifetime', {})
     rolling = stats.get('rolling_window', [])
 
     # Lifetime totals
-    lt = {'tp': 0, 'fp': 0, 'tn': 0, 'fn': 0}
+    lt = {'tp': 0, 'fp': 0, 'tn': 0, 'fn': 0, 'duplicate': 0}
     for source in lifetime.values():
         if isinstance(source, dict):
             for k in lt:
                 lt[k] += source.get(k, 0)
 
+    # `duplicate` is excluded from the reviewed-total since it's not a decision
     lt_total = lt['tp'] + lt['fp'] + lt['tn'] + lt['fn']
     lt_precision = lt['tp'] / (lt['tp'] + lt['fp']) if (lt['tp'] + lt['fp']) > 0 else 0
     lt_recall = lt['tp'] / (lt['tp'] + lt['fn']) if (lt['tp'] + lt['fn']) > 0 else 0
 
     # Rolling window
-    rw = {'tp': 0, 'fp': 0, 'tn': 0, 'fn': 0}
+    rw = {'tp': 0, 'fp': 0, 'tn': 0, 'fn': 0, 'duplicate': 0}
     for entry in rolling:
-        sig = entry.get('signal', '')
+        # Support both schemas: {signal: tp} and {type: tp, count: N}
+        sig = entry.get('signal') or entry.get('type') or ''
+        count = entry.get('count', 1)
         if sig in rw:
-            rw[sig] += 1
+            rw[sig] += count
 
-    rw_total = sum(rw.values())
+    rw_total = rw['tp'] + rw['fp'] + rw['tn'] + rw['fn']
     rw_precision = rw['tp'] / (rw['tp'] + rw['fp']) if (rw['tp'] + rw['fp']) > 0 else 0
     rw_recall = rw['tp'] / (rw['tp'] + rw['fn']) if (rw['tp'] + rw['fn']) > 0 else 0
 
@@ -153,6 +161,10 @@ def print_dashboard(stats, metrics):
     print(f"Lifetime ({metrics['lifetime_total']} signals):")
     print(f"  TP: {lt['tp']}  FP: {lt['fp']}  TN: {lt['tn']}  FN: {lt['fn']}")
     print(f"  Precision: {metrics['lt_precision']:.1%}  Recall: {metrics['lt_recall']:.1%}")
+    if lt.get('duplicate', 0):
+        reviewed = metrics['lifetime_total']
+        rate = lt['duplicate'] / (reviewed + lt['duplicate']) if reviewed else 0
+        print(f"  Duplicates re-surfaced: {lt['duplicate']} ({rate:.1%} of inflow)")
 
     # Per source
     lifetime = stats.get('lifetime', {})
@@ -170,6 +182,8 @@ def print_dashboard(stats, metrics):
     print(f"Rolling window ({metrics['rolling_total']}/50 entries):")
     print(f"  TP: {rw['tp']}  FP: {rw['fp']}  TN: {rw['tn']}  FN: {rw['fn']}")
     print(f"  Precision: {metrics['rw_precision']:.1%}  Recall: {metrics['rw_recall']:.1%}")
+    if rw.get('duplicate', 0):
+        print(f"  Duplicates re-surfaced: {rw['duplicate']}")
     print()
 
     # Review-ignored
