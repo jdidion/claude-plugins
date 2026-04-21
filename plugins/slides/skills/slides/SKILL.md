@@ -71,6 +71,10 @@ If first argument is `diagram`, render Mermaid markup to PNG for embedding in sl
 npx -p @mermaid-js/mermaid-cli mmdc -i diagram.mmd -o diagram.png -t neutral -b transparent -w 800
 ```
 
+### Mode 4: Configure a PPTX template
+
+To use a custom corporate/personal template for PPTX output instead of the built-in teal/white theme, run `/slides:template <path-to-pptx>`. It inspects the template, auto-picks a layout for each role (title, section, content, two-column), prompts for overrides, and saves the mapping to `~/.claude/scripts/slides_config.json`. After that, `/slides deck.md pptx` uses the template automatically.
+
 ## Slide Authoring Guide
 
 When creating or editing MARP slides, follow these guidelines.
