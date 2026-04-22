@@ -15,7 +15,7 @@ Read from `config/`:
 
 If `feeds.yaml` has no feeds configured, tell the user to export OPML from Feedly or add feeds manually.
 
-**FEEDLY_TOKEN check**: If `.env` is missing `FEEDLY_TOKEN`, surface a one-line warning in the final summary (Step 6) noting that Step 7 will be skipped. Do not block discovery — the token is only needed to mark articles read in Feedly's UI.
+**FEEDLY_TOKEN check**: If `~/projects/claude-plugins/plugins/curaitor/.env` is missing `FEEDLY_TOKEN`, surface a one-line warning in the final summary (Step 6) noting that Step 7 will be skipped. Do not block discovery — the token is only needed to mark articles read in Feedly's UI.
 
 ## Step 2: Fetch articles from each feed
 
@@ -77,7 +77,24 @@ After writing Obsidian notes, mark the discovered articles as read in Feedly so 
 python3 scripts/feedly.py mark-read "$FEEDLY_STREAM_ID" --urls-file /tmp/curaitor-discovered-urls.txt
 ```
 
-Only run this if `FEEDLY_TOKEN` is set in `.env`. If the token is expired, skip silently and note it in the summary.
+Only run this if `FEEDLY_TOKEN` is set in `~/projects/claude-plugins/plugins/curaitor/.env`.
+
+**Token expiry handling** — behavior depends on execution mode:
+
+- **Interactive mode** (user ran the skill manually): if the Feedly API returns 401/token-expired, **pause** and tell the user how to refresh the token. The token lives in Feedly's browser localStorage — instruct them to:
+  1. Open [feedly.com](https://feedly.com) while signed in
+  2. Open devtools (Cmd+Opt+I / Ctrl+Shift+I) → Console
+  3. Run `JSON.parse(localStorage.getItem('feedlyDevAccessToken') || localStorage.getItem('auth.access_token'))` (key name varies; try both)
+  4. Copy the resulting string into `FEEDLY_TOKEN=...` in `~/projects/claude-plugins/plugins/curaitor/.env`
+  5. Re-run `/cu:discover`
+
+- **Cron mode** (non-interactive): skip silently, log one line `FEEDLY_TOKEN expired on YYYY-MM-DD — skip mark-read step` to stderr, and continue. Do not block the pipeline.
+
+**Interactive vs cron detection**: check the env var `CURAITOR_CRON`. If `CURAITOR_CRON=1` (cron wrappers should set this), use cron-mode behavior. Otherwise assume interactive. No fallback to TTY detection — the env var is the single source of truth. If `CURAITOR_CRON` is unset in an ambiguous context, **default to cron-safe (non-blocking) behavior** to avoid wedging an unattended run.
+
+## Step 8: Suggest next action
+
+After the summary, check the Review queue (`Curaitor/Review/`). If non-empty, print a single line: `Next: run /cu:review — N articles waiting` (where N is the count of notes in the folder). If the Review queue is empty, print nothing. Do **not** auto-invoke `/cu:review` — this is a hint only.
 
 ## Rules
 - Only evaluate based on RSS title/description/abstract — don't WebFetch full articles (too slow for many feeds)
