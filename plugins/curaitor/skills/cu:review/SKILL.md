@@ -13,13 +13,21 @@ $ARGUMENTS — Optional: number of articles to review (default: all), or "ignore
 
 If the queue is empty, tell the user and exit.
 
+## Monitor orientation
+
+If the user's primary cmux monitor is vertical, set `CURAITOR_MONITOR=vertical` in their shell env. When set, this skill prefers `cmux browser open-split-below` (stacks panes vertically) over the default `cmux browser open-split` (horizontal). When unset or `horizontal`, use the default.
+
 ## Step 2: LinkedIn pre-authentication
 
 Many Review articles are LinkedIn posts. Check if any articles have linkedin.com URLs. If so, authenticate at the start of the session:
 
 1. Open LinkedIn in cmux browser:
    ```bash
-   cmux browser open "https://www.linkedin.com/login"
+   if [ "$CURAITOR_MONITOR" = "vertical" ]; then
+     cmux browser open-split-below "https://www.linkedin.com/login"
+   else
+     cmux browser open "https://www.linkedin.com/login"
+   fi
    ```
 2. Track the returned `surface:NN` ID for all subsequent browser commands
 3. Use Bitwarden CLI to fill credentials (look up the LinkedIn item in Bitwarden):
@@ -139,7 +147,11 @@ Default to the repo URL for GitHub/GitLab-linked articles.
 
 ### d. Open in cmux browser
 ```bash
-cmux browser open "ARTICLE_URL"  # or REPO_URL if user chose [r]
+if [ "$CURAITOR_MONITOR" = "vertical" ]; then
+  cmux browser open-split-below "ARTICLE_URL"  # or REPO_URL if user chose [r]
+else
+  cmux browser open "ARTICLE_URL"  # or REPO_URL if user chose [r]
+fi
 # or if reusing existing surface:
 cmux browser goto "URL" --surface surface:NN
 cmux browser wait --load-state complete --surface surface:NN --timeout-ms 5000
