@@ -120,9 +120,10 @@ All triage folders live under `Curaitor/` in the Obsidian vault:
 - **Curaitor/Archive/** is written ONLY by `/cu:read` (human decision after deep reading). Contains `Archive.md` with audit trail.
 
 ### Triage quality signals
-Every human verdict during `/cu:review` and `/cu:review-ignored` provides a signal about triage quality:
-- **True positive**: article kept during review (y, d, t, c, b, r, p, skip) — triage was right to flag it for review
-- **False positive**: article recycled during review (n) — triage shouldn't have put this in Review. Agent analyzes WHY and updates preferences to decrease future false-positive rate.
+Every human verdict during `/cu:review` and `/cu:review-ignored` provides a signal about triage quality. **Engagement counts as a positive signal** — if the user asks a question or requests more detail about an article, triage was right to surface it, even if the ultimate decision is to recycle.
+
+- **True positive**: article kept during review (y, d, t, c, b, r, p, skip) OR the user engaged with it (asked ≥1 question / requested more detail) before recycling — triage was right to flag it for attention. Engaged TPs set `engaged: true` on the rolling_window entry so the engagement rate is visible in `/cu:status`.
+- **False positive**: article recycled during review (n) with no engagement — the user saw the summary, said "no", moved on. Triage shouldn't have put this in Review. Agent analyzes WHY and updates preferences to decrease future false-positive rate.
 - **True negative** (via `/cu:review-ignored`): user confirms article was correctly ignored → reinforces correct triage behavior
 - **False negative** (via `/cu:review-ignored`): user rescues a wrongly-ignored article → agent analyzes WHY and updates preferences to decrease future false-negative rate.
 

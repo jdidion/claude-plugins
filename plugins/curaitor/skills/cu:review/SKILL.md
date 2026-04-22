@@ -238,7 +238,10 @@ The user can type:
 - **b** → **Bookmark**: save the link to `Bookmarks.md` in Obsidian vault root (see Bookmark format below), then delete from `Curaitor/Review/`. If `config/user-settings.yaml` has a custom `bookmark_command`, run that instead. **True positive**.
 - **r** → save to Zotero via API, move to `Curaitor/Inbox/`, add zotero_key to frontmatter. **True positive**.
 - **p** → **Post to Slack** (see Post flow below), then recycle the article. **True positive**.
-- **n** → **Recycle**: the user has reviewed this and doesn't want to keep it. This is a **false positive** — triage was wrong to put this in Review. Append `- [title](url)` to `Curaitor/Recycle.md`, then delete the article note from `Curaitor/Review/`. Analyze WHY the article was wrongly included in Review (what triage signal was misleading?) and update `config/reading-prefs.md` to decrease the future false-positive rate. NEVER move articles to `Curaitor/Ignored/` — that folder is only for triage-agent classifications.
+- **n** → **Recycle**: the user has reviewed this and doesn't want to keep it. Signal depends on engagement (see below):
+  - **If the user asked at least one question about this article OR requested more detail before giving `n`** → **engaged TP**: triage was right to surface it for attention, even though the user chose not to keep it. Record with `engaged: true` in the rolling_window entry.
+  - **If the user went straight to `n` with no questions** → **false positive**: triage was wrong to put this in Review. Analyze WHY and update `config/reading-prefs.md` to decrease the future false-positive rate.
+  In either case, append `- [title](url)` to `Curaitor/Recycle.md` and delete the article note from `Curaitor/Review/`. NEVER move articles to `Curaitor/Ignored/` — that folder is only for triage-agent classifications.
 - **skip** → leave in `Curaitor/Review/`. **True positive** (the user isn't dismissing it, so triage was right to flag it).
 - **q** → stop, show session summary
 
@@ -400,9 +403,14 @@ For **true positives**, only log if the pattern is genuinely new and informative
 
 At the end of the session, update `config/accuracy-stats.yaml`:
 
-1. **Accumulate signals**: For each article reviewed this session, add to `lifetime.{source}.{signal}` (TP or FP) and append to `rolling_window` (FIFO, max 50 entries):
+1. **Accumulate signals**: For each article reviewed this session, add to `lifetime.{source}.{signal}` (TP or FP) and append to `rolling_window` (FIFO, max 50 entries). For `engaged TP` signals (user asked questions before recycling), also increment `lifetime.{source}.engaged_tp` and set `engaged: true` on the rolling-window entry:
    ```yaml
+   # Kept verdict (y/d/t/c/b/r/p/skip)
    {date: "YYYY-MM-DD", source: "instapaper", signal: "tp", title: "Article Title"}
+   # Recycled after engagement (user asked questions, then gave n)
+   {date: "YYYY-MM-DD", source: "rss", signal: "tp", engaged: true, title: "Article Title"}
+   # Recycled without engagement (pure FP)
+   {date: "YYYY-MM-DD", source: "rss", signal: "fp", title: "Article Title"}
    ```
    If rolling_window exceeds 50, remove the oldest entries.
 
