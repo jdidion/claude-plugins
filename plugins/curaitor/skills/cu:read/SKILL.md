@@ -40,7 +40,8 @@ cmux browser wait --load-state complete --surface surface:NN --timeout-ms 5000
 
 ### c. Fetch full content
 Get the complete article text for RAG discussion:
-- **Papers (DOI, bioRxiv, arXiv, nature.com):** If the `read_pdf` MCP tool is available, use it for PDF URLs — it extracts text AND images (figures, tables). Otherwise WebFetch the full text. If paywalled, use `cmux browser snapshot --compact` to get what's visible.
+- **Papers (DOI, bioRxiv, arXiv, nature.com):** If the `read_pdf` MCP tool is available and you can derive a PDF URL, prefer it — it extracts text AND images (figures, tables). Otherwise WebFetch the HTML full text. If paywalled, use `cmux browser snapshot --compact` to get what's visible.
+- **Hostnames known to block WebFetch** (`biorxiv.org`, `www.biorxiv.org`, `medrxiv.org`, some `nature.com` article pages — typically 403 or 303 redirect): **skip WebFetch entirely.** Try, in order: (1) append `.full.pdf` to a bioRxiv/medRxiv URL and use `read_pdf`; (2) `cmux browser goto` + `cmux browser snapshot --compact` to read the rendered page. Do not WebFetch these hosts — it wastes tokens and time.
 - **GitHub repos:** `gh api repos/OWNER/REPO --jq '.description'` + WebFetch the README
 - **Blog posts / LinkedIn:** WebFetch or `cmux browser snapshot --compact`
 

@@ -350,6 +350,7 @@ When the user types `d`, this means "I'm interested AND I want to read and discu
 2. **Fetch full content:**
    - For PDF URLs (papers): use `read_pdf` MCP tool if available (extracts text + images/figures). Otherwise WebFetch.
    - For papers: fetch abstract + full text if accessible
+   - **Hosts that block WebFetch** (`biorxiv.org`, `medrxiv.org`, some `nature.com` articles — 403/303): skip WebFetch. Try (1) swap to `.full.pdf` + `read_pdf`, or (2) `cmux browser goto` + `cmux browser snapshot --compact`.
    - For GitHub repos: read the README
    - For LinkedIn posts: use cmux browser snapshot to get full DOM content
    - Store the fetched content in working memory for the discussion
