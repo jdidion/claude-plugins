@@ -123,14 +123,31 @@ def extract_sections(body):
     return sections
 
 
+def resolve_folder(vault, folder):
+    """Pick the right Obsidian folder for a curaitor bucket.
+
+    Prefers `Curaitor/<folder>` (the canonical location) over the vault-root
+    `<folder>` because older vaults have an unrelated, empty `Inbox/` at the
+    root that used to short-circuit this lookup and silently return zero
+    articles. Only fall back to vault-root if `Curaitor/<folder>` does not
+    exist.
+
+    Returns the absolute path or None if neither location is a directory.
+    """
+    curaitor_path = os.path.join(vault, 'Curaitor', folder)
+    if os.path.isdir(curaitor_path):
+        return curaitor_path
+    root_path = os.path.join(vault, folder)
+    if os.path.isdir(root_path):
+        return root_path
+    return None
+
+
 def read_folder(vault, folder, limit=None, days=None):
     """Read all .md notes from a vault folder."""
-    path = os.path.join(vault, folder)
-    if not os.path.isdir(path):
-        # Try under Curaitor/ prefix
-        path = os.path.join(vault, 'Curaitor', folder)
-        if not os.path.isdir(path):
-            return []
+    path = resolve_folder(vault, folder)
+    if path is None:
+        return []
 
     cutoff = None
     if days:
@@ -227,15 +244,21 @@ def main():
 
     days = args.days if args.folder == 'ignored' else None
     articles = read_folder(vault, folder, limit=args.limit, days=days)
+    resolved = resolve_folder(vault, folder)
+    resolved_rel = os.path.relpath(resolved, vault) if resolved else f'{folder}/ (not found)'
 
-    output = {'articles': articles, 'count': len(articles)}
+    output = {
+        'articles': articles,
+        'count': len(articles),
+        'folder': resolved_rel,
+    }
 
     if args.include_meta:
         output['topics'] = list_topics(vault)
         output['vault_tags'] = collect_vault_tags(vault)
 
     json.dump(output, sys.stdout, indent=2)
-    print(f"\n{len(articles)} articles from {folder}/", file=sys.stderr)
+    print(f"\n{len(articles)} articles from {resolved_rel}", file=sys.stderr)
 
 
 if __name__ == '__main__':
