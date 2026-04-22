@@ -277,13 +277,18 @@ def cmd_write(args):
 
         norm = normalize_url(url)
         if norm in known_urls:
-            # Duplicate — recycle immediately, don't create a note.
+            # Duplicate — recycle, don't create a note.
             # Distinguish whether it matched a live vault note or was previously recycled.
             title = article.get('title', url)
             from_recycle = norm in recycled_urls
             tag = '(duplicate from Recycle)' if from_recycle else '(duplicate)'
-            with open(recycle_path, 'a', encoding='utf-8') as rf:
-                rf.write(f"- [{title}]({url}) {tag}\n")
+            # Only write a new recycle line if this URL isn't already recorded.
+            # Accumulating duplicate lines breaks `patch_note` disambiguation
+            # later; one entry per normalized URL is enough.
+            if not from_recycle:
+                with open(recycle_path, 'a', encoding='utf-8') as rf:
+                    rf.write(f"- [{title}]({url}) {tag}\n")
+                recycled_urls.add(norm)  # prevent intra-batch re-appends
             if from_recycle:
                 recycled_dup_recycle += 1
             else:
@@ -366,16 +371,87 @@ def cmd_dedup(args):
     )
 
 
+def cmd_dedup_recycle(args):
+    """Collapse duplicate lines in Curaitor/Recycle.md by normalized URL.
+
+    Accumulating duplicate recycle lines breaks `patch_note` disambiguation
+    (one URL with 5 entries can't be edited cleanly). Run this when the file
+    gets messy. Idempotent and safe to re-run.
+    """
+    vault = find_vault()
+    recycle_path = os.path.join(vault, 'Curaitor', 'Recycle.md')
+    if not os.path.isfile(recycle_path):
+        print(f"No Recycle.md at {recycle_path}", file=sys.stderr)
+        return
+
+    with open(recycle_path, encoding='utf-8') as fh:
+        original = fh.readlines()
+
+    seen = set()
+    kept = []
+    dropped = 0
+    non_entry_lines = 0
+    for line in original:
+        m = _RECYCLE_LINE.match(line)
+        if not m:
+            # Non-entry line (heading, blank, freeform note) — keep verbatim
+            kept.append(line)
+            non_entry_lines += 1
+            continue
+        norm = normalize_url(m.group(1))
+        if norm in seen:
+            dropped += 1
+            continue
+        seen.add(norm)
+        kept.append(line)
+
+    if args.dry_run:
+        print(json.dumps({
+            'vault': vault,
+            'recycle_path': recycle_path,
+            'total_lines': len(original),
+            'entry_lines': len(original) - non_entry_lines,
+            'unique_urls': len(seen),
+            'would_drop': dropped,
+        }, indent=2))
+        return
+
+    if dropped == 0:
+        print(f"Recycle.md already dedup'd ({len(seen)} unique URLs)", file=sys.stderr)
+        return
+
+    # Write-replace with atomic-ish swap via a temp file
+    tmp = recycle_path + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as fh:
+        fh.writelines(kept)
+    os.replace(tmp, recycle_path)
+
+    print(json.dumps({
+        'vault': vault,
+        'recycle_path': recycle_path,
+        'before_lines': len(original),
+        'after_lines': len(kept),
+        'dropped': dropped,
+        'unique_urls': len(seen),
+    }, indent=2))
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(description='Write triage results to Obsidian')
     parser.add_argument('--dedup-only', action='store_true',
                         help='Only check for duplicates, do not write notes')
+    parser.add_argument('--dedup-recycle', action='store_true',
+                        help='Collapse duplicate lines in Curaitor/Recycle.md (one-time cleanup)')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='With --dedup-recycle: report without modifying the file')
     parser.add_argument('--urls', nargs='+', help='URLs to check (dedup mode)')
     parser.add_argument('--urls-file', help='File with URLs (dedup mode)')
     args = parser.parse_args()
 
-    if args.dedup_only:
+    if args.dedup_recycle:
+        cmd_dedup_recycle(args)
+    elif args.dedup_only:
         cmd_dedup(args)
     else:
         cmd_write(args)
