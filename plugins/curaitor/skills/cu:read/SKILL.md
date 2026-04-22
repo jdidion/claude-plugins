@@ -25,6 +25,10 @@ Inbox: 23 articles
 Starting with #1.
 ```
 
+## Monitor orientation
+
+If the user's primary cmux monitor is vertical, set `CURAITOR_MONITOR=vertical` in their shell env. When set, this skill prefers `cmux browser open-split-below` (stacks panes vertically) over the default `cmux browser open-split` (horizontal). When unset or `horizontal`, use the default.
+
 ## Step 3: For each article
 
 ### a. Read the Obsidian note
@@ -32,7 +36,11 @@ Use `mcp__obsidian__read_note` to get the full note including frontmatter (title
 
 ### b. Open in cmux browser
 ```bash
-cmux browser open "ARTICLE_URL"
+if [ "$CURAITOR_MONITOR" = "vertical" ]; then
+  cmux browser open-split-below "ARTICLE_URL"
+else
+  cmux browser open "ARTICLE_URL"
+fi
 # or reuse existing surface:
 cmux browser goto "ARTICLE_URL" --surface surface:NN
 cmux browser wait --load-state complete --surface surface:NN --timeout-ms 5000
