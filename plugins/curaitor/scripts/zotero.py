@@ -7,6 +7,7 @@ Usage:
     python scripts/zotero.py save URL [--title T] [--tags t1,t2] [--collection C1]
     python scripts/zotero.py add-note ITEM_KEY NOTE_HTML    # add a child note
     python scripts/zotero.py search QUERY                   # search for items
+    python scripts/zotero.py attach ITEM_KEY PDF_PATH       # attach PDF to item (web API)
 
 Uses Zotero's local connector API (localhost:23119).
 """
@@ -136,6 +137,26 @@ def search_items(query):
         return {'error': str(e)}
 
 
+def attach_pdf(item_key, pdf_path):
+    """Attach a local PDF to an existing Zotero item via the pyzotero web API."""
+    try:
+        from pyzotero import zotero
+    except ImportError:
+        return {'error': 'pyzotero not installed; run: pip install pyzotero'}
+
+    config = load_config()
+    library_id = config.get('user_id') or config.get('library_id')
+    library_type = config.get('library_type', 'user')
+    api_key = config.get('api_key')
+
+    if not library_id or not api_key:
+        return {'error': 'config/zotero.yaml must define user_id (or library_id) and api_key'}
+
+    zot = zotero.Zotero(library_id, library_type, api_key)
+    result = zot.attachment_simple([pdf_path], parentid=item_key)
+    return result
+
+
 def main():
     import urllib.parse
 
@@ -182,6 +203,12 @@ def main():
             print("Usage: zotero.py search QUERY", file=sys.stderr)
             sys.exit(1)
         json.dump(search_items(sys.argv[2]), sys.stdout, indent=2)
+
+    elif cmd == 'attach':
+        if len(sys.argv) < 4:
+            print("Usage: zotero.py attach ITEM_KEY PDF_PATH", file=sys.stderr)
+            sys.exit(1)
+        json.dump(attach_pdf(sys.argv[2], sys.argv[3]), sys.stdout, indent=2)
 
     else:
         print(f"Unknown command: {cmd}", file=sys.stderr)

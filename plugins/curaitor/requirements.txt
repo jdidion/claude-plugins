@@ -7,3 +7,4 @@ pyyaml>=6.0
 # declared dependency because our scripts import it directly (see scripts/_ssl_util.py)
 # to sidestep Python 3.14 strict SSL checks against macOS keychain certs.
 certifi>=2025.1.31
+pyzotero>=1.5.0
