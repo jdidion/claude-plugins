@@ -1,0 +1,19 @@
+# Per-user curaitor settings.
+# Copy to user-settings.yaml (gitignored) and edit.
+default_slack_channel: "#general"
+
+# Obsidian vault paths for specific features. All paths are relative to the
+# vault root. Skills should read from this block rather than hardcoding paths.
+# Tracking ticket for threading this through all skills: https://github.com/jdidion/claude-plugins/issues/13
+vault_paths:
+  journal_club: "Journal Club Ideas.md"
+  bookmarks: "Bookmarks.md"
+  tools_and_projects: "Tools & Projects.md"
+  curaitor_root: "Curaitor"       # Inbox, Review, Ignored, Archive, Recycle.md live under here
+  library_root: "Library"         # Permanently-kept articles
+  topics_root: "Topics"           # Topic notes
+  recycle_file: "Curaitor/Recycle.md"
+
+# Optional: custom command to run on `b` (bookmark) verdict.
+# If unset, bookmarks are written to `vault_paths.bookmarks` in Obsidian.
+# bookmark_command: "curl -s -X POST 'https://api.raindrop.io/rest/v1/raindrop' -H 'Authorization: Bearer $RAINDROP_TOKEN' -H 'Content-Type: application/json' -d '{\"link\": \"$URL\", \"title\": \"$TITLE\"}'"
