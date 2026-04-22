@@ -19,14 +19,21 @@ import yaml
 
 STATS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'config', 'accuracy-stats.yaml')
 
-# Graduation thresholds
+# Graduation thresholds.
+#
+# Thresholds were raised by ~5pp at each level after the engagement-as-TP
+# change: a Review article now counts as TP if the user kept it OR engaged
+# with it (asked questions, requested detail) before ultimately recycling.
+# Because the TP bucket is larger under that definition, precision is
+# mechanically easier to achieve, so the bars go up to preserve the same
+# real-world quality signal.
 LEVELS = {
     0: {
         'name': 'Cold start',
         'next': {
             'reviewed': 50,
             'review_ignored_passes': 2,
-            'rolling_precision': 0.7,
+            'rolling_precision': 0.75,
             'rolling_recall': 0.8,
         },
     },
@@ -35,7 +42,7 @@ LEVELS = {
         'next': {
             'reviewed': 100,
             'review_ignored_passes': 4,
-            'rolling_precision': 0.8,
+            'rolling_precision': 0.85,
             'rolling_recall': 0.85,
         },
     },
@@ -44,7 +51,7 @@ LEVELS = {
         'next': {
             'reviewed': 200,
             'review_ignored_passes': 6,
-            'rolling_precision': 0.85,
+            'rolling_precision': 0.9,
             'rolling_recall': 0.9,
         },
     },
@@ -72,43 +79,66 @@ def save_stats(stats):
 def compute_metrics(stats):
     """Compute precision, recall, and total reviewed from stats.
 
+    Signal definitions:
+      TP — article was kept (y/d/t/c/b/r/p/skip) OR the user engaged with it
+           (asked at least one question/asked for detail before the verdict).
+           Engagement means triage was right to surface the article for
+           attention, even if the ultimate decision was to recycle.
+      FP — article was recycled (n) AND there was no engagement. Pure false
+           positive: the user saw the summary, said "no", and moved on.
+      TN — (via /cu:review-ignored) user confirmed an Ignored article was
+           correctly ignored.
+      FN — (via /cu:review-ignored) user rescued a wrongly-ignored article.
+
     The `duplicate` signal counts articles that re-surfaced after already
     being recycled. It's tracked separately from TP/FP/TN/FN so it doesn't
     skew precision/recall — a rising duplicate rate signals dedup regression.
+
+    Engagement is tracked as a side-channel counter (not a separate bucket):
+    `engaged_tp` counts how many of the TP signals came from engagement on
+    recycled articles vs. outright keeps. Useful for the dashboard.
     """
     lifetime = stats.get('lifetime', {})
     rolling = stats.get('rolling_window', [])
 
     # Lifetime totals
-    lt = {'tp': 0, 'fp': 0, 'tn': 0, 'fn': 0, 'duplicate': 0}
+    lt = {'tp': 0, 'fp': 0, 'tn': 0, 'fn': 0, 'duplicate': 0, 'engaged_tp': 0}
     for source in lifetime.values():
         if isinstance(source, dict):
             for k in lt:
                 lt[k] += source.get(k, 0)
 
-    # `duplicate` is excluded from the reviewed-total since it's not a decision
+    # `duplicate` and `engaged_tp` are excluded from the reviewed-total
+    # (engaged_tp is already counted inside tp; duplicate isn't a decision).
     lt_total = lt['tp'] + lt['fp'] + lt['tn'] + lt['fn']
     lt_precision = lt['tp'] / (lt['tp'] + lt['fp']) if (lt['tp'] + lt['fp']) > 0 else 0
     lt_recall = lt['tp'] / (lt['tp'] + lt['fn']) if (lt['tp'] + lt['fn']) > 0 else 0
+    lt_engagement_rate = lt['engaged_tp'] / lt['tp'] if lt['tp'] else 0
 
     # Rolling window
-    rw = {'tp': 0, 'fp': 0, 'tn': 0, 'fn': 0, 'duplicate': 0}
+    rw = {'tp': 0, 'fp': 0, 'tn': 0, 'fn': 0, 'duplicate': 0, 'engaged_tp': 0}
     for entry in rolling:
         # Support both schemas: {signal: tp} and {type: tp, count: N}
         sig = entry.get('signal') or entry.get('type') or ''
         count = entry.get('count', 1)
         if sig in rw:
             rw[sig] += count
+        # Engagement is a boolean per entry; count it when present on a TP.
+        if sig == 'tp' and entry.get('engaged'):
+            rw['engaged_tp'] += count
 
     rw_total = rw['tp'] + rw['fp'] + rw['tn'] + rw['fn']
     rw_precision = rw['tp'] / (rw['tp'] + rw['fp']) if (rw['tp'] + rw['fp']) > 0 else 0
     rw_recall = rw['tp'] / (rw['tp'] + rw['fn']) if (rw['tp'] + rw['fn']) > 0 else 0
+    rw_engagement_rate = rw['engaged_tp'] / rw['tp'] if rw['tp'] else 0
 
     return {
         'lifetime': lt, 'lifetime_total': lt_total,
         'lt_precision': lt_precision, 'lt_recall': lt_recall,
+        'lt_engagement_rate': lt_engagement_rate,
         'rolling': rw, 'rolling_total': rw_total,
         'rw_precision': rw_precision, 'rw_recall': rw_recall,
+        'rw_engagement_rate': rw_engagement_rate,
     }
 
 
@@ -161,6 +191,10 @@ def print_dashboard(stats, metrics):
     print(f"Lifetime ({metrics['lifetime_total']} signals):")
     print(f"  TP: {lt['tp']}  FP: {lt['fp']}  TN: {lt['tn']}  FN: {lt['fn']}")
     print(f"  Precision: {metrics['lt_precision']:.1%}  Recall: {metrics['lt_recall']:.1%}")
+    if lt.get('engaged_tp', 0) and lt['tp']:
+        engaged = lt['engaged_tp']
+        rate = metrics['lt_engagement_rate']
+        print(f"  Engagement: {engaged}/{lt['tp']} TPs came from engagement on recycled ({rate:.1%})")
     if lt.get('duplicate', 0):
         reviewed = metrics['lifetime_total']
         rate = lt['duplicate'] / (reviewed + lt['duplicate']) if reviewed else 0
@@ -182,6 +216,8 @@ def print_dashboard(stats, metrics):
     print(f"Rolling window ({metrics['rolling_total']}/50 entries):")
     print(f"  TP: {rw['tp']}  FP: {rw['fp']}  TN: {rw['tn']}  FN: {rw['fn']}")
     print(f"  Precision: {metrics['rw_precision']:.1%}  Recall: {metrics['rw_recall']:.1%}")
+    if rw.get('engaged_tp', 0) and rw['tp']:
+        print(f"  Engagement: {rw['engaged_tp']}/{rw['tp']} TPs ({metrics['rw_engagement_rate']:.1%})")
     if rw.get('duplicate', 0):
         print(f"  Duplicates re-surfaced: {rw['duplicate']}")
     print()
