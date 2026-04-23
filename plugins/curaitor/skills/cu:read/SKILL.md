@@ -12,6 +12,8 @@ $ARGUMENTS — Optional: number of articles to read (default: all in Inbox), or 
 
 If Inbox is empty, tell the user and exit.
 
+**Do not editorialize about the count.** The list from `mcp__obsidian__list_directory` is the ground truth for what's in the Inbox right now. Do NOT compare it against a count from an earlier turn (e.g. a `/cu:status` summary) or call the difference "unexpected." Cron triage and discover add articles asynchronously, so new arrivals are normal, not surprising. Jump straight to Step 2.
+
 ## Step 2: Present Inbox overview
 
 ```
