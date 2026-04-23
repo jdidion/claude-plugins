@@ -25,6 +25,26 @@ recycle_rollover_threshold: 1000
 # re-surfacings. Default 3 ≈ 90 days at the default rollover cadence.
 recycle_archive_window: 3
 
+# Optional: a memory-frugal local model (via Ollama) handles the first-round
+# triage pass — confidently-not-interesting articles auto-skip to Ignored
+# without a Claude call, saving ~40% of Claude usage per cycle. See
+# scripts/local-triage.py.
+#
+# Default: disabled. Enable at installation via `bash scripts/setup.sh --local-triage`
+# or flip `enabled` below and restart cron.
+local_triage:
+  enabled: false
+  model: huihui_ai/gemma-4-abliterated:e4b
+  ollama_host: http://localhost:11434
+  # strict      — auto-skip ONLY when the local model says high-not-interested
+  #               (recommended; Phase 1b measured 43% safe auto-skip rate with
+  #                zero false negatives on a 36-item RSS sample)
+  # permissive  — also pass high-interested items straight to Inbox without
+  #               Claude review. Reserved for post-drift-monitor calibration;
+  #               not recommended until the local model has a longer track
+  #               record against your actual reading prefs.
+  escalation_mode: strict
+
 # Optional: custom command to run on `b` (bookmark) verdict.
 # If unset, bookmarks are written to `vault_paths.bookmarks` in Obsidian.
 # bookmark_command: "curl -s -X POST 'https://api.raindrop.io/rest/v1/raindrop' -H 'Authorization: Bearer $RAINDROP_TOKEN' -H 'Content-Type: application/json' -d '{\"link\": \"$URL\", \"title\": \"$TITLE\"}'"

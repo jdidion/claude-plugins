@@ -122,6 +122,18 @@ Match against preferences in `reading-prefs.md` to determine confidence level.
 
 Before routing, check each article URL against existing vault notes **and the Recycle log**. Use `python3 scripts/triage-write.py --dedup-only --urls URL1 URL2 ...` — it checks both live notes and `Curaitor/Recycle.md`, reporting `duplicate_from_note` vs `duplicate_from_recycle` separately. Exact URL duplicates are immediately recycled — append `- [title](url) (duplicate)` (or `(duplicate from Recycle)` for re-surfaced items) to `Curaitor/Recycle.md`. Do NOT create notes in Ignored for duplicates. Duplicates are not triage quality signals.
 
+## Step 3.6: Optional local-model pre-pass
+
+If `config/user-settings.yaml:local_triage.enabled` is true, pipe the deduped article list through `scripts/local-triage.py` before the routing step below:
+
+```bash
+echo '[...articles...]' | python3 scripts/local-triage.py
+```
+
+The script is a pass-through no-op when `local_triage.enabled` is false (the default). When enabled, each article gets a `_local` object with the local model's classification plus a `skip` boolean.
+
+Articles with `_local.skip == true` route directly to `Curaitor/Ignored/` with frontmatter `triage_source: local-model` and `local_model: <tag>`. These bypass further LLM work. All others fall through to Step 4 normal routing.
+
 ## Step 4: Route to Obsidian
 
 Use the Obsidian MCP to write notes. Apply **autonomy-level routing overrides** (from Step 1):
