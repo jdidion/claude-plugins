@@ -28,6 +28,20 @@ For each feed in `feeds.yaml`:
 
 Check Obsidian for existing notes **and the Recycle log** with matching URLs. Use `python3 scripts/triage-write.py --dedup-only --urls URL1 URL2 ...` for batch checking — it checks both live notes and `Curaitor/Recycle.md`, and returns `duplicate_from_note` / `duplicate_from_recycle` counts. Exact URL duplicates are immediately recycled — append `- [title](url) (duplicate)` or `(duplicate from Recycle)` to `Curaitor/Recycle.md`. Do NOT create notes for duplicates. A rising `duplicate_from_recycle` count indicates dedup regression — investigate if it exceeds ~5% of inflow.
 
+## Step 3.5: Optional local-model pre-pass
+
+If `config/user-settings.yaml:local_triage.enabled` is true, pipe the deduped article list through the local pre-pass before LLM evaluation:
+
+```bash
+echo '[...articles...]' | python3 scripts/local-triage.py
+```
+
+The script is a pass-through no-op when `local_triage.enabled` is false (the default). When enabled, it augments each article with a `_local` object containing the local model's `confidence`/`verdict`/`category`/`slop_label`/`tags`/`summary` plus a `skip` boolean.
+
+Articles with `_local.skip == true` (strict mode: the local model confidently tagged them `high-not-interested`) route straight to `Curaitor/Ignored/` with frontmatter `triage_source: local-model` and `local_model: <tag>`. **Do NOT re-evaluate these with Claude** — that would defeat the point of the pre-pass.
+
+All other articles (including `_local.skip == false` and any articles where the local model errored out) continue to Step 4 normal Claude evaluation.
+
 ## Step 4: Evaluate each article
 
 For each new article, evaluate against `reading-prefs.md`.
