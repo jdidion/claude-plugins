@@ -14,6 +14,12 @@ vault_paths:
   topics_root: "Topics"           # Topic notes
   recycle_file: "Curaitor/Recycle.md"
 
+# Line-count trigger for auto-rotating Curaitor/Recycle.md into a monthly
+# archive at Curaitor/Archive/Recycle-YYYY-MM.md. triage-write.py rolls
+# over automatically when the live file exceeds this many entry lines.
+# See scripts/recycle-rollover.py.
+recycle_rollover_threshold: 1000
+
 # Optional: custom command to run on `b` (bookmark) verdict.
 # If unset, bookmarks are written to `vault_paths.bookmarks` in Obsidian.
 # bookmark_command: "curl -s -X POST 'https://api.raindrop.io/rest/v1/raindrop' -H 'Authorization: Bearer $RAINDROP_TOKEN' -H 'Content-Type: application/json' -d '{\"link\": \"$URL\", \"title\": \"$TITLE\"}'"
