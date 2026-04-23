@@ -31,20 +31,20 @@ echo "  repo: $CURAITOR_DIR"
 # Install Python dependencies
 if [ -f "$CURAITOR_DIR/requirements.txt" ]; then
     echo "  Installing Python dependencies from requirements.txt..."
-    pip install -r "$CURAITOR_DIR/requirements.txt"
+    python3 -m pip install -r "$CURAITOR_DIR/requirements.txt"
 else
     # Fallback for older checkouts without requirements.txt
     if ! python3 -c "import requests_oauthlib" 2>/dev/null; then
         echo "  Installing requests-oauthlib..."
-        pip install requests-oauthlib
+        python3 -m pip install requests-oauthlib
     fi
     if ! python3 -c "import yaml" 2>/dev/null; then
         echo "  Installing pyyaml..."
-        pip install pyyaml
+        python3 -m pip install pyyaml
     fi
     if ! python3 -c "import certifi" 2>/dev/null; then
         echo "  Installing certifi..."
-        pip install certifi
+        python3 -m pip install certifi
     fi
 fi
 
