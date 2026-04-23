@@ -437,8 +437,23 @@ Preferences updated:
 ```
 
 ## Rules
+
+### Continuation after verdict
+
+**CRITICAL**: After handling any verdict other than `q`, immediately present the next article **in the same turn**. Do NOT:
+- Output "Moving on." / "Next up." / "Recycled. Moving to #N" as a standalone line that ends the turn.
+- Wait for the user to type `go` / `next` / `continue` before showing article N+1.
+
+The only turn-ending conditions are:
+1. User typed `q` → print session summary, end turn.
+2. Queue is empty (article N was the last) → print session summary, end turn.
+3. User asked a question (free text that isn't a verdict key) → answer, re-show verdict menu, end turn.
+
+If you find yourself writing a sentence like "Recycled. Moving to #N" as the last thing in a response, that is a bug — keep going and actually present #N in the same response. Treat verdict-handling and next-article-presentation as one atomic unit.
+
+### Other rules
 - Always open the article in cmux browser before presenting
-- Wait for user input after each article
+- The turn ends at the verdict menu, not between articles — see Continuation rule above
 - **Parallel work checklists**: When running 3+ parallel operations (background agents, batch actions), show a visible checklist so the user can track progress:
   ```
   - [x] Pre-fetch 10 articles
