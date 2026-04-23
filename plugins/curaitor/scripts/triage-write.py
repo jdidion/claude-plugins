@@ -97,6 +97,33 @@ def normalize_url(url):
 # Matches Recycle.md lines: "- [title](url) ..." (url may be bare or surrounded by <>)
 _RECYCLE_LINE = re.compile(r'^\s*-\s+\[[^\]]*\]\(\s*<?([^)\s>]+)>?\s*\)')
 
+_FRONTMATTER_END = '---'
+_URL_LINE = re.compile(r'^url:\s*(.+)$', re.MULTILINE)
+
+
+def read_frontmatter_only(path):
+    """Return the text up to (and including) the closing frontmatter `---`.
+
+    Falls back to the first 500 bytes if no closing delimiter is found. Used
+    by dedup to avoid reading the full note body — 5-20x I/O reduction on
+    larger notes, which matters on Google-Drive-backed vaults.
+    """
+    try:
+        with open(path, encoding='utf-8') as fh:
+            first = fh.readline()
+            if not first.startswith(_FRONTMATTER_END):
+                return first  # no frontmatter; only the first line is header-ish
+            buf = [first]
+            for line in fh:
+                buf.append(line)
+                if line.startswith(_FRONTMATTER_END):
+                    break
+                if len(buf) > 200:  # pathological frontmatter; bail
+                    break
+            return ''.join(buf)
+    except (OSError, UnicodeDecodeError):
+        return ''
+
 
 def _parse_recycle(recycle_path):
     """Return normalized URLs from a Curaitor/Recycle.md file."""
@@ -114,43 +141,79 @@ def _parse_recycle(recycle_path):
     return urls
 
 
-def build_url_index(vault):
-    """Scan all triage folders + Recycle.md and build a set of normalized URLs.
+# Most-recent N recycle archives included in the dedup set. Bounds dedup
+# scan cost as the Recycle archive grows month-over-month.
+RECYCLE_ARCHIVE_WINDOW = 3
 
-    Articles that were previously recycled (duplicates, slop, no-source)
-    should not re-triage — so Recycle.md is part of the known-URL set.
+
+def dedup_sources(vault):
+    """Return the list of (kind, path) dedup should scan for a vault.
+
+    Centralizes the "where do we look for known URLs?" policy. Callers walk
+    the returned list instead of hardcoding folders.
+
+    Returns a list of dicts:
+      {'kind': 'folder', 'path': <abs dir>}      — walk .md notes, frontmatter only
+      {'kind': 'recycle', 'path': <abs file>}    — parse Recycle.md-style lines
     """
-    known = set()
     folders = [
         'Inbox', 'Review', 'Ignored', 'Library',
         'Curaitor/Inbox', 'Curaitor/Review', 'Curaitor/Ignored',
+        'Topics',
     ]
+    sources = []
     for folder in folders:
-        path = os.path.join(vault, folder)
-        if not os.path.isdir(path):
-            continue
-        for f in os.listdir(path):
-            if not f.endswith('.md') or f.startswith('.'):
-                continue
-            filepath = os.path.join(path, f)
-            try:
-                with open(filepath, encoding='utf-8') as fh:
-                    # Only read first 500 chars — URL is in frontmatter
-                    head = fh.read(500)
-                m = re.search(r'^url:\s*(.+)$', head, re.MULTILINE)
+        p = os.path.join(vault, folder)
+        if os.path.isdir(p):
+            sources.append({'kind': 'folder', 'path': p})
+
+    # Live recycle log
+    live_recycle = os.path.join(vault, 'Curaitor', 'Recycle.md')
+    if os.path.isfile(live_recycle):
+        sources.append({'kind': 'recycle', 'path': live_recycle})
+
+    # Most-recent N monthly archives (Curaitor/Archive/Recycle-YYYY-MM.md)
+    archive_dir = os.path.join(vault, 'Curaitor', 'Archive')
+    if os.path.isdir(archive_dir):
+        archives = sorted(
+            (f for f in os.listdir(archive_dir) if f.startswith('Recycle-') and f.endswith('.md')),
+            reverse=True,
+        )
+        for name in archives[:RECYCLE_ARCHIVE_WINDOW]:
+            sources.append({'kind': 'recycle', 'path': os.path.join(archive_dir, name)})
+
+    return sources
+
+
+def build_url_index(vault):
+    """Scan all dedup sources and build a set of normalized URLs.
+
+    Includes live note folders, the live Recycle.md, and the most recent
+    monthly recycle archives. See `dedup_sources()` for the canonical list.
+    """
+    known = set()
+    for src in dedup_sources(vault):
+        if src['kind'] == 'folder':
+            for f in os.listdir(src['path']):
+                if not f.endswith('.md') or f.startswith('.'):
+                    continue
+                head = read_frontmatter_only(os.path.join(src['path'], f))
+                m = _URL_LINE.search(head)
                 if m:
                     url = m.group(1).strip().strip('"').strip("'")
                     known.add(normalize_url(url))
-            except (OSError, UnicodeDecodeError):
-                continue
-
-    known |= _parse_recycle(os.path.join(vault, 'Curaitor', 'Recycle.md'))
+        elif src['kind'] == 'recycle':
+            known |= _parse_recycle(src['path'])
     return known
 
 
 def build_recycle_index(vault):
-    """Return only the recycled URLs, for distinguishing duplicate sources."""
-    return _parse_recycle(os.path.join(vault, 'Curaitor', 'Recycle.md'))
+    """Return only the recycled URLs (live + archives), for distinguishing duplicate sources."""
+    urls = set()
+    for src in dedup_sources(vault):
+        if src['kind'] == 'recycle':
+            urls |= _parse_recycle(src['path'])
+    return urls
 
 
 # --- Filename sanitization ---
@@ -248,9 +311,37 @@ def write_note(vault, folder, filename, frontmatter, body):
 
 # --- Main ---
 
+def maybe_rollover_recycle(vault):
+    """Best-effort auto-rotation of Recycle.md when it crosses the threshold.
+
+    Runs before dedup scans so the live file stays small and the archive
+    picks up the old entries (dedup_sources() also scans recent archives
+    so coverage is preserved).
+
+    Silent on all failures — rollover is an optimization, not a hard
+    requirement for triage correctness.
+    """
+    try:
+        import importlib.util
+        mod_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'recycle-rollover.py')
+        spec = importlib.util.spec_from_file_location('_rr', mod_path)
+        if spec is None or spec.loader is None:
+            return
+        rr = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(rr)
+        threshold = rr.load_threshold()
+        if rr.needs_rotation(os.path.join(vault, 'Curaitor', 'Recycle.md'), threshold):
+            result = rr.rotate(vault, threshold, apply=True)
+            if result.get('rotated'):
+                print(f"Recycle.md rolled over to {result['archive_path']}", file=sys.stderr)
+    except Exception:
+        pass
+
+
 def cmd_write(args):
     """Write triage results to Obsidian."""
     vault = find_vault()
+    maybe_rollover_recycle(vault)
     recycled_urls = build_recycle_index(vault)
     known_urls = build_url_index(vault)  # includes recycled + vault notes
 
