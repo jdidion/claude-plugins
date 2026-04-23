@@ -64,18 +64,30 @@ def find_vault():
 
 # --- Config ---
 
-def load_threshold(default=1000):
-    settings_path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), '..', 'config', 'user-settings.yaml'
-    )
-    if os.path.isfile(settings_path):
+_SETTINGS_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), '..', 'config', 'user-settings.yaml'
+)
+
+
+def _load_int_setting(key, default):
+    if os.path.isfile(_SETTINGS_PATH):
         try:
-            with open(settings_path) as f:
+            with open(_SETTINGS_PATH) as f:
                 data = yaml.safe_load(f) or {}
-            return int(data.get('recycle_rollover_threshold', default))
+            return int(data.get(key, default))
         except (OSError, yaml.YAMLError, ValueError):
             pass
     return default
+
+
+def load_threshold(default=1000):
+    """Lines in Curaitor/Recycle.md that trigger auto-rotation."""
+    return _load_int_setting('recycle_rollover_threshold', default)
+
+
+def load_archive_window(default=3):
+    """How many recent monthly Recycle archives to include in the dedup scan."""
+    return _load_int_setting('recycle_archive_window', default)
 
 
 # --- Rotation ---

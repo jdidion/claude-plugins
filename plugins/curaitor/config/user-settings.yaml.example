@@ -20,6 +20,11 @@ vault_paths:
 # See scripts/recycle-rollover.py.
 recycle_rollover_threshold: 1000
 
+# Number of most-recent monthly Recycle archives to include in the dedup
+# scan. Lower this if dedup becomes a bottleneck; raise it to catch older
+# re-surfacings. Default 3 ≈ 90 days at the default rollover cadence.
+recycle_archive_window: 3
+
 # Optional: custom command to run on `b` (bookmark) verdict.
 # If unset, bookmarks are written to `vault_paths.bookmarks` in Obsidian.
 # bookmark_command: "curl -s -X POST 'https://api.raindrop.io/rest/v1/raindrop' -H 'Authorization: Bearer $RAINDROP_TOKEN' -H 'Content-Type: application/json' -d '{\"link\": \"$URL\", \"title\": \"$TITLE\"}'"

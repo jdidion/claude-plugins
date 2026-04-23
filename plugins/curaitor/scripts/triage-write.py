@@ -142,8 +142,21 @@ def _parse_recycle(recycle_path):
 
 
 # Most-recent N recycle archives included in the dedup set. Bounds dedup
-# scan cost as the Recycle archive grows month-over-month.
-RECYCLE_ARCHIVE_WINDOW = 3
+# scan cost as the Recycle archive grows month-over-month. Default 3;
+# override via `recycle_archive_window` in user-settings.yaml — lower if
+# dedup becomes a bottleneck, higher to catch older re-surfacings.
+def _recycle_archive_window():
+    try:
+        import importlib.util
+        mod_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'recycle-rollover.py')
+        spec = importlib.util.spec_from_file_location('_rr', mod_path)
+        if spec is None or spec.loader is None:
+            return 3
+        rr = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(rr)
+        return rr.load_archive_window()
+    except Exception:
+        return 3
 
 
 def dedup_sources(vault):
@@ -179,7 +192,7 @@ def dedup_sources(vault):
             (f for f in os.listdir(archive_dir) if f.startswith('Recycle-') and f.endswith('.md')),
             reverse=True,
         )
-        for name in archives[:RECYCLE_ARCHIVE_WINDOW]:
+        for name in archives[:_recycle_archive_window()]:
             sources.append({'kind': 'recycle', 'path': os.path.join(archive_dir, name)})
 
     return sources
