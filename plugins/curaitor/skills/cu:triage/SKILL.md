@@ -174,6 +174,19 @@ Why this is worth reading.
 
 Use the `mcp__obsidian__write_note` tool. The note path should be `Curaitor/{folder}/{sanitized-title}.md`.
 
+## Step 4.5: Pre-generate summaries for Inbox articles (cron only)
+
+If `CURAITOR_CRON=1`, after writing any note that landed in `Curaitor/Inbox/`, pre-generate its structured summary into the cache so the next `/cu:read` session renders instantly instead of regenerating from scratch:
+
+```bash
+python3 scripts/summarize-inbox.py --one-url "$ARTICLE_URL"
+```
+
+Best-effort:
+- Runs sequentially; each call takes ~6s on Gemma 4 e4b via Ollama.
+- Failures are logged but do NOT block the triage run. A missed pre-generation just means `/cu:read` hits the inline fallback.
+- Skip this step entirely when `CURAITOR_CRON` is unset (interactive users can run `/cu:read` which spawns the same pre-generation as a background job — no need to double up).
+
 ## Step 5: Archive in Instapaper
 
 After writing the Obsidian note, archive the bookmark:
