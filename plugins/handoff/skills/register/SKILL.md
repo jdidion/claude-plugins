@@ -1,3 +1,8 @@
+---
+name: register
+description: Register the current Claude Code session with a friendly name so other sessions can send handoffs to it. Use when the user asks to register this session, set session name, or make this discoverable for handoffs.
+---
+
 # /handoff:register — Register this session for handoff discovery
 
 Register the current Claude Code session with a friendly name so other sessions can find and send handoffs to it.

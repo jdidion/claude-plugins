@@ -1,3 +1,8 @@
+---
+name: team
+description: Create and manage interactive teams of Claude Code sessions with shared messaging and task coordination via cmux. Use when the user asks to create a team, spawn teammates, manage shared tasks, or coordinate multi-session work.
+---
+
 # /handoff:team — Create and manage interactive teams
 
 Create a team of Claude Code sessions running in separate cmux panes with shared messaging and task coordination.

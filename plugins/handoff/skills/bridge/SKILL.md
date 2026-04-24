@@ -1,3 +1,8 @@
+---
+name: bridge
+description: Connect this session to an existing team as an external member. Use when the user asks to bridge into a team, join a team session, or enable interactive teammate messaging via cmux.
+---
+
 # /handoff:bridge — Connect this session to an existing team
 
 Join this Claude Code session to a running team as an external member with message bridging.
