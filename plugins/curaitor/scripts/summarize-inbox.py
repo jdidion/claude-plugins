@@ -46,9 +46,36 @@ import yaml
 
 CACHE_DIR = Path.home() / '.curaitor' / 'summary-cache'
 QUEUE_PATH = Path.home() / '.curaitor' / 'summary-queue.txt'
+STATS_PATH = Path.home() / '.curaitor' / 'summary-stats.json'
 SETTINGS_PATH = Path(__file__).resolve().parent.parent / 'config' / 'user-settings.yaml'
 OLLAMA_DEFAULT = 'http://localhost:11434'
 GENERATOR_VERSION = 'cu-summarize v1'
+
+
+def record_stat(model, latency_s):
+    """Update ~/.curaitor/summary-stats.json on each successful generation.
+
+    Best-effort — never raise; stats are observability, not correctness.
+    """
+    try:
+        STATS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        stats = {}
+        if STATS_PATH.is_file():
+            try:
+                stats = json.loads(STATS_PATH.read_text(encoding='utf-8')) or {}
+            except (OSError, json.JSONDecodeError):
+                stats = {}
+        stats['count'] = int(stats.get('count', 0)) + 1
+        stats['total_latency_s'] = round(float(stats.get('total_latency_s', 0.0)) + latency_s, 2)
+        stats['avg_latency_s'] = round(stats['total_latency_s'] / stats['count'], 2)
+        stats['last_generated_at'] = datetime.now(timezone.utc).isoformat(timespec='seconds')
+        stats['last_model'] = model
+        stats['last_latency_s'] = round(latency_s, 2)
+        tmp = STATS_PATH.with_suffix('.tmp')
+        tmp.write_text(json.dumps(stats, indent=2) + '\n', encoding='utf-8')
+        os.replace(tmp, STATS_PATH)
+    except Exception:
+        pass
 
 
 # --- URL normalization (must match triage-write.py) ---
@@ -297,6 +324,7 @@ def summarize_note_file(path, cfg, force=False):
     except (HTTPError, URLError, TimeoutError) as e:
         return 'error', f'llm: {e}'
     cp = cache_write_atomic(url, title, summary_md, source_mtime_iso)
+    record_stat(cfg['model'], latency)
     return 'generated', f'{cp} ({latency:.1f}s)'
 
 
@@ -313,6 +341,7 @@ def summarize_by_url(url, title, body, cfg, force=False):
     except (HTTPError, URLError, TimeoutError) as e:
         return 'error', f'llm: {e}'
     cp = cache_write_atomic(url, title, summary_md, now_iso)
+    record_stat(cfg['model'], latency)
     return 'generated', f'{cp} ({latency:.1f}s)'
 
 
@@ -460,6 +489,7 @@ def main():
     sub.add_argument('--regenerate-url', help='Force-regenerate a single URL')
     sub.add_argument('--list', action='store_true', help='List cache entries as JSON')
     sub.add_argument('--gc', action='store_true', help='Delete cache entries with no matching vault note')
+    sub.add_argument('--stats', action='store_true', help='Print ~/.curaitor/summary-stats.json (cumulative counters)')
     parser.add_argument('--apply', action='store_true', help='For --gc: actually delete (default: dry-run)')
     parser.add_argument('--regenerate', action='store_true', help='Force regenerate even when fresh')
 
@@ -480,6 +510,26 @@ def main():
         cmd_list(args)
     elif args.gc:
         cmd_gc(args)
+    elif args.stats:
+        cmd_stats()
+
+
+def cmd_stats():
+    """Print ~/.curaitor/summary-stats.json, creating a zeroed stub if missing."""
+    if not STATS_PATH.is_file():
+        print(json.dumps({
+            'count': 0,
+            'total_latency_s': 0,
+            'avg_latency_s': 0,
+            'last_generated_at': None,
+            'last_model': None,
+            'last_latency_s': None,
+        }, indent=2))
+        return
+    try:
+        print(STATS_PATH.read_text(encoding='utf-8').rstrip())
+    except (OSError, UnicodeDecodeError) as e:
+        print(json.dumps({'error': str(e)}))
 
 
 if __name__ == '__main__':
