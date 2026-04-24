@@ -245,6 +245,20 @@ The user can type:
 - **skip** → leave in `Curaitor/Review/`. **True positive** (the user isn't dismissing it, so triage was right to flag it).
 - **q** → stop, show session summary
 
+### Cache hand-off to `/cu:read`
+
+Whenever a verdict moves the article to `Curaitor/Inbox/` (today: `y`, `r`, and the `d` deep-read path when it doesn't stay in Library), write any drafted assessment or discussion summary to the `/cu:read` summary cache so the next deep-read session gets a cache hit:
+
+```bash
+python3 scripts/summarize-inbox.py --one-url "$ARTICLE_URL"
+```
+
+This is best-effort and should run AFTER the `mcp__obsidian__write_note` call that moves the article. Cost: ~6s per article via Gemma 4 e4b. Failures are fine — `/cu:read` will fall back to inline generation and write the cache itself on first read.
+
+If the review session produced a richer assessment than the stock prompt would (e.g. you had a long discussion loop before the verdict), the cache-from-scratch path is acceptable — the prompt used by `summarize-inbox.py` is the same one `/cu:read` uses inline, so quality parity is preserved. Don't try to splice discussion notes into the cache format; those belong in the topic note or Zotero entry, not the summary cache.
+
+Skip this hand-off for `t` (article moves to a Topic, not Inbox), `c`/`b`/`p` (no Inbox destination), and `n`/`skip` (not moving at all).
+
 ### Post to Slack flow (p)
 
 1. **Prompt for channel**: Print the default channel from `config/user-settings.yaml` (`default_slack_channel`), ask the user to type a channel name, user ID (for DM), or type `.` to accept the default.
