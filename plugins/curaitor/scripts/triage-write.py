@@ -324,6 +324,39 @@ def write_note(vault, folder, filename, frontmatter, body):
 
 # --- Main ---
 
+def _pregenerate_summaries(urls):
+    """Pre-generate summaries for freshly-added Inbox articles.
+
+    Runs scripts/summarize-inbox.py --one-url for each URL. Failures are
+    tolerated — pre-generation is an optimization; a miss just means
+    /cu:read will hit the inline fallback.
+
+    Returns a dict with per-URL status for the triage output JSON.
+    """
+    import subprocess
+    this_dir = os.path.dirname(os.path.abspath(__file__))
+    script = os.path.join(this_dir, 'summarize-inbox.py')
+    if not os.path.isfile(script):
+        return {'status': 'script-missing', 'queued': len(urls)}
+
+    per_url = {}
+    for url in urls:
+        try:
+            proc = subprocess.run(
+                ['python3', script, '--one-url', url],
+                capture_output=True, text=True, timeout=180,
+            )
+            try:
+                per_url[url] = json.loads(proc.stdout.strip().splitlines()[-1])
+            except (json.JSONDecodeError, IndexError):
+                per_url[url] = {'status': 'unparseable', 'info': (proc.stderr or '')[:200]}
+        except subprocess.TimeoutExpired:
+            per_url[url] = {'status': 'timeout'}
+        except (OSError, subprocess.SubprocessError) as e:
+            per_url[url] = {'status': 'error', 'info': str(e)}
+    return per_url
+
+
 def maybe_rollover_recycle(vault):
     """Best-effort auto-rotation of Recycle.md when it crosses the threshold.
 
@@ -368,6 +401,7 @@ def cmd_write(args):
     skipped_nourl = 0
     errors = 0
     results = {'inbox': [], 'review': [], 'ignored': []}
+    inbox_urls_for_summary = []
 
     # Recycle file for duplicates
     recycle_path = os.path.join(vault, 'Curaitor', 'Recycle.md')
@@ -410,6 +444,12 @@ def cmd_write(args):
 
             bucket = folder.split('/')[-1].lower()
             results[bucket].append(article['title'])
+
+            # Queue for summary pre-generation if the article lands in Inbox.
+            # Note: we queue instead of call inline so cmd_write stays snappy —
+            # each summary call is ~6s and we don't want triage blocked on it.
+            if args.generate_summaries and folder == 'Curaitor/Inbox':
+                inbox_urls_for_summary.append(article['url'])
         except Exception as e:
             print(f"Error writing {article.get('title', '?')}: {e}", file=sys.stderr)
             errors += 1
@@ -425,6 +465,8 @@ def cmd_write(args):
         'total_input': len(articles),
         'routing': {k: len(v) for k, v in results.items()},
     }
+    if args.generate_summaries and inbox_urls_for_summary:
+        output['summary_queue'] = _pregenerate_summaries(inbox_urls_for_summary)
     json.dump(output, sys.stdout, indent=2)
     print(file=sys.stdout)
 
@@ -551,6 +593,10 @@ def main():
                         help='With --dedup-recycle: report without modifying the file')
     parser.add_argument('--urls', nargs='+', help='URLs to check (dedup mode)')
     parser.add_argument('--urls-file', help='File with URLs (dedup mode)')
+    parser.add_argument('--generate-summaries', action='store_true',
+                        help='After writing Inbox notes, pre-generate their summaries '
+                             'into the cache (calls summarize-inbox.py --one-url per URL). '
+                             'Intended for cron use; adds ~6s per Inbox-bound article.')
     args = parser.parse_args()
 
     if args.dedup_recycle:

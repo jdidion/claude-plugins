@@ -69,6 +69,16 @@ Same three-tier routing as `/triage`, with **autonomy-level overrides**:
 
 Note format same as `/triage`, but `source: rss` and include `feed_name` in frontmatter.
 
+## Step 5.5: Pre-generate summaries for Inbox articles (cron only)
+
+If `CURAITOR_CRON=1`, after writing any note that landed in `Curaitor/Inbox/`, pre-generate its structured summary into the cache so the next `/cu:read` session renders instantly instead of regenerating from scratch:
+
+```bash
+python3 scripts/summarize-inbox.py --one-url "$ARTICLE_URL"
+```
+
+Best-effort — failures are logged but do NOT block the discover run. Skip entirely when `CURAITOR_CRON` is unset (interactive `/cu:read` spawns the same pre-generation as a background job).
+
 ## Step 6: Present summary
 
 ```
