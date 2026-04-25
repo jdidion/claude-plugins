@@ -1,3 +1,8 @@
+---
+name: slides
+description: Create MARP markdown slide decks and convert to PDF, HTML, PPTX, and Google Slides with visual validation. Use when the user asks to create a deck, convert a .md slide file to another format, render Mermaid diagrams for slides, or validate slide layout.
+---
+
 # /slides — Create, Convert, and Validate Presentation Slides
 
 Create MARP markdown slide decks and convert to PDF, HTML, and/or PPTX with visual validation.

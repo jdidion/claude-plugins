@@ -1,3 +1,8 @@
+---
+name: send
+description: Send context to another Claude Code session as a Pod-envelope handoff. Use when the user asks to hand off to another session, send context across sessions, or ship current state to a teammate's Claude session.
+---
+
 # /handoff:send — Send context to another Claude Code session
 
 Compile context from the current conversation and deliver it to a target session running in cmux. The payload is wrapped in a Pod v1 envelope (Shape A — markdown with YAML frontmatter), providing fingerprint integrity and ULID-based idempotency.

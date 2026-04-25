@@ -1,3 +1,8 @@
+---
+name: template
+description: Configure a default PPTX template for the slides plugin. Inspect a .pptx, infer which layouts fit each MARP slide role (title, section, content, two-column), prompt for overrides, and save the mapping so subsequent /slides ... pptx uses the template automatically.
+---
+
 # /slides:template — Configure a default PPTX template
 
 Inspect a PPTX template, infer which layouts to use for each MARP slide role (title / section / content / two-column), and save the mapping to `~/.claude/scripts/slides_config.json`. After this, `/slides deck.md pptx` will use the template automatically.

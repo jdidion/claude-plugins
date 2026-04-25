@@ -1,3 +1,8 @@
+---
+name: inbox
+description: Check for incoming Pod-envelope handoffs addressed to this session. Use when the user asks to check inbox, see pending handoffs, or accept a handoff. Verifies fingerprints and tracks seen pod IDs for idempotency.
+---
+
 # /handoff:inbox — Check for incoming handoffs
 
 Check for handoff pods waiting for this session, verify their fingerprints, and present them for acceptance.
