@@ -44,6 +44,15 @@
       "author": { "name": "John Didion" },
       "license": "MIT",
       "keywords": ["context", "memory", "compaction", "session", "offload", "prompts", "logging"]
+    },
+    {
+      "name": "hx",
+      "source": "./plugins/hx",
+      "description": "Open files in Helix in an adjacent cmux terminal surface; markdown files get a live preview pane. Orientation-aware split direction.",
+      "version": "0.1.0",
+      "author": { "name": "John Didion" },
+      "license": "MIT",
+      "keywords": ["helix", "hx", "editor", "markdown", "preview", "cmux"]
     }
   ]
 }
