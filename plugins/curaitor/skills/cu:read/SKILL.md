@@ -175,6 +175,26 @@ The user can type:
 - **skip** → Leave in `Curaitor/Inbox/`, move to next article.
 - **q** → Stop, show session summary.
 
+### h.1. Present the NEXT article immediately (do not end the turn)
+
+**CRITICAL**: After completing the tool calls for ANY verdict except `q` — including multi-step verdicts like `t` (topic mode: read topic file, append entry, delete inbox note, archive instapaper bookmark — 3-4 tool calls) — the next thing you emit in the same response MUST be article N+1's full structured block (header bar, Summary, Key findings, Methods, Relevance, verdict menu).
+
+Common dead-end patterns observed in real sessions (all BUGS, do not emit these as the last user-visible content):
+- "Adding X to the Variant Annotation topic." (and then stop)
+- "Looking for the existing topic." (and then stop)
+- "Now archiving the Instapaper bookmark and deleting the Inbox note." (and then stop)
+- Recap sentences like "Running /cu:read on the Inbox; on article 6/10..." (these are narration, not progress — and they end the turn because the agent thinks it's reporting out)
+
+Any acknowledgement line followed by no further content is the exact bug. If the user has to type "nudge", "next", "go", or "continue" between articles, the skill has failed.
+
+The turn ends ONLY on:
+1. `q` verdict → print session summary, end.
+2. Queue empty (article N was the last) → print session summary, end.
+3. User asked a free-text question that isn't a verdict key → answer it from the cached/fetched content, re-show the verdict menu, end.
+4. Verdict `d` that entered Deep Read mode and the user is mid-discussion — in this case the RAG loop governs, not the per-article loop; the turn ends when the user types a final verdict or "next" inside the discussion.
+
+For all other cases: tool calls complete → optional one-line ack → immediately render article N+1 in the same response. Verdict handling and next-article presentation are one atomic unit.
+
 ### i. Save discussion notes
 
 For **r** and **t** verdicts, before removing the article, compile discussion notes from the conversation:
@@ -207,18 +227,9 @@ Discussion notes saved for:
 
 ## Rules
 
-### Continuation after verdict
+### Continuation after verdict — see Step 3.h.1
 
-**CRITICAL**: After handling any verdict other than `q`, immediately present the next article **in the same turn**. Do NOT:
-- Output "Moving on." / "Next up." / "Recycled. Moving to #N" as a standalone line that ends the turn.
-- Wait for the user to type `go` / `next` / `continue` before showing article N+1.
-
-The only turn-ending conditions are:
-1. User typed `q` → print session summary, end turn.
-2. Queue is empty (article N was the last) → print session summary, end turn.
-3. User asked a question (free text that isn't a verdict key) → answer, re-show verdict menu, end turn.
-
-If you find yourself writing a sentence like "Recycled. Moving to #N" as the last thing in a response, that is a bug — keep going and actually present #N in the same response. Treat verdict-handling and next-article-presentation as one atomic unit.
+The canonical rule lives inline with the verdict list at **Step 3.h.1** so you encounter it while handling each verdict. TL;DR: after any non-`q` verdict, the next user-visible content in the SAME response must be article N+1's structured block — not an acknowledgement line, not "Moving on.", not silence, and not a recap sentence like "Running /cu:read on the Inbox; on article 6/10...".
 
 ### Other rules
 - Always fetch full article content before presenting the summary

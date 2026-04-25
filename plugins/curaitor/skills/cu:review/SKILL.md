@@ -245,6 +245,25 @@ The user can type:
 - **skip** → leave in `Curaitor/Review/`. **True positive** (the user isn't dismissing it, so triage was right to flag it).
 - **q** → stop, show session summary
 
+### g.1. Present the NEXT article immediately (do not end the turn)
+
+**CRITICAL**: After completing the tool calls for ANY verdict except `q` — including multi-step verdicts like `t` (topic mode with 3-4 obsidian tool calls) — the next thing you emit in the same response MUST be the next article's structured summary and verdict menu.
+
+Common dead-end patterns observed in real sessions (all BUGS, do not emit these as the last user-visible content):
+- "Adding X to the Variant Annotation topic." (and then stop)
+- "Now archiving the Instapaper bookmark and deleting the Inbox note." (and then stop)
+- "Looking for the existing topic." (and then stop)
+- Any acknowledgement line followed by no further content — that is the exact bug.
+
+The turn ends ONLY on:
+1. `q` verdict → print session summary, end.
+2. Queue empty after this article was the last → print session summary, end.
+3. User typed free-text that isn't a verdict key → answer the question, re-show the menu, end.
+
+For all other verdicts: tool calls complete → one-line acknowledgement if helpful (or skip it entirely) → immediately render article N+1's assessment block and verdict menu in the same response. Verdict handling and next-article presentation are one atomic unit.
+
+If the user has to type "nudge", "next", "go", or "continue" between articles, the skill has a bug. Do not wait for those nudges. The menu at the end of the rendered next-article block is the implicit pause point; anything less is premature termination.
+
 ### Cache hand-off to `/cu:read`
 
 Whenever a verdict moves the article to `Curaitor/Inbox/` (today: `y`, `r`, and the `d` deep-read path when it doesn't stay in Library), write any drafted assessment or discussion summary to the `/cu:read` summary cache so the next deep-read session gets a cache hit:
@@ -452,18 +471,9 @@ Preferences updated:
 
 ## Rules
 
-### Continuation after verdict
+### Continuation after verdict — see Step 4.g.1
 
-**CRITICAL**: After handling any verdict other than `q`, immediately present the next article **in the same turn**. Do NOT:
-- Output "Moving on." / "Next up." / "Recycled. Moving to #N" as a standalone line that ends the turn.
-- Wait for the user to type `go` / `next` / `continue` before showing article N+1.
-
-The only turn-ending conditions are:
-1. User typed `q` → print session summary, end turn.
-2. Queue is empty (article N was the last) → print session summary, end turn.
-3. User asked a question (free text that isn't a verdict key) → answer, re-show verdict menu, end turn.
-
-If you find yourself writing a sentence like "Recycled. Moving to #N" as the last thing in a response, that is a bug — keep going and actually present #N in the same response. Treat verdict-handling and next-article-presentation as one atomic unit.
+The canonical rule lives inline with the verdict list at **Step 4.g.1** so you encounter it while handling each verdict. TL;DR: after any non-`q` verdict, the next user-visible content in the SAME response must be article N+1's structured block — not an acknowledgement line, not "Moving on.", not silence.
 
 ### Other rules
 - Always open the article in cmux browser before presenting
