@@ -134,6 +134,24 @@ The script is a pass-through no-op when `local_triage.enabled` is false (the def
 
 Articles with `_local.skip == true` route directly to `Curaitor/Ignored/` with frontmatter `triage_source: local-model` and `local_model: <tag>`. These bypass further LLM work. All others fall through to Step 4 normal routing.
 
+## Step 3.7: Enqueue escalations before Claude evaluation (cron only)
+
+If `CURAITOR_CRON=1` AND the escalation list (articles passing through to Step 4) is non-empty, write them to the level-2 pending queue *before* calling Claude:
+
+```bash
+cat escalations.json | python3 scripts/level2-queue.py append --source instapaper --enqueued-by cu:triage --reason pre-claude
+```
+
+If cron Claude completes Step 4 successfully, ack those URLs after writing notes:
+
+```bash
+printf '%s\n' "${PROCESSED_URLS[@]}" | python3 scripts/level2-queue.py ack --urls-file /dev/stdin
+```
+
+If cron Claude fails (auth expired, timeout, crash), the articles stay on the queue and the next interactive `/cu:review`, `/cu:read`, `/cu:status`, or `/cu:review-ignored` session drains them (see `skills/cu:status/protocol.md` §Step 0).
+
+Skip this step when `CURAITOR_CRON` is unset.
+
 ## Step 4: Route to Obsidian
 
 Use the Obsidian MCP to write notes. Apply **autonomy-level routing overrides** (from Step 1):

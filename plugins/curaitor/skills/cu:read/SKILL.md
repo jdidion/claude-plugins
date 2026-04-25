@@ -5,6 +5,20 @@ Read through articles in your Inbox one at a time: open in cmux browser, get a s
 ## Arguments
 $ARGUMENTS — Optional: number of articles to read (default: all in Inbox), or a specific note filename.
 
+## Step 0: Drain the level-2 pending queue FIRST
+
+Before listing the Inbox, check whether cron-Claude left work behind:
+
+```bash
+python3 scripts/level2-queue.py status
+```
+
+If `pending > 0`, process those articles BEFORE starting the read session. Cron `/cu:discover` and `/cu:triage` enqueue articles before handing them to Claude; an auth-expired cron leaves them queued for the next interactive session to finish. You ARE that interactive session.
+
+Procedure: `python3 scripts/level2-queue.py peek`, evaluate each with the normal level-2 Claude triage prompt, write the resulting notes, then `level2-queue.py ack --urls-file /tmp/processed.txt`. Report `Drained N level-2-pending articles.` before continuing. Full procedure in `skills/cu:status/protocol.md` §Step 0. Articles that land in `Curaitor/Inbox/` after this step will show up in the listing for Step 1.
+
+If `pending == 0`, skip to Step 1.
+
 ## Step 1: Load context
 
 1. Read `config/reading-prefs.md`

@@ -5,6 +5,20 @@ Batch-scan ignored articles to catch false negatives. This is a high-throughput 
 ## Arguments
 $ARGUMENTS — Optional: number of days to look back (default 30), or `all` to re-review previously reviewed articles.
 
+## Step 0: Drain the level-2 pending queue FIRST
+
+Before loading the Ignored folder, check whether cron-Claude left work behind:
+
+```bash
+python3 scripts/level2-queue.py status
+```
+
+If `pending > 0`, process those articles before starting this review-ignored session. Cron `/cu:discover` and `/cu:triage` enqueue articles before handing them to Claude; an auth-expired cron leaves them queued for the next interactive session. You ARE that interactive session.
+
+Procedure: peek, evaluate each with the normal level-2 Claude prompt, write notes, ack the processed URLs. Full procedure in `skills/cu:status/protocol.md` §Step 0. Report `Drained N level-2-pending articles.` then continue.
+
+If `pending == 0`, skip to Step 1.
+
 ## Step 1: Load and read all notes
 
 1. Read `config/reading-prefs.md` from the plugin root

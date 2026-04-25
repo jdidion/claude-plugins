@@ -21,6 +21,39 @@ Execution protocol for the curaitor status dashboard. The SKILL.md is the public
 
 ## Workflow
 
+### Step 0: Drain the level-2 pending queue (if non-empty)
+
+Cron `/cu:discover` and `/cu:triage` enqueue articles to `~/.curaitor/level2-pending.json` *before* handing them to Claude, then ack them on success. If Claude failed mid-cycle (most commonly cron auth expiry), those articles stay queued until an interactive session — this one — picks them up.
+
+Check the queue first:
+
+```bash
+python3 scripts/level2-queue.py status
+```
+
+If `pending > 0`, drain and process before anything else. Interactive `/cu:status`, `/cu:review`, `/cu:read`, and `/cu:review-ignored` sessions all run this step first because the user is already authed in their interactive Claude Code session:
+
+```bash
+python3 scripts/level2-queue.py drain > /tmp/level2-drain.json
+```
+
+For each article in the drained JSON:
+1. The article already has a `_local` object from Gemma 4. Use that as the starting classification.
+2. Run the normal level-2 Claude evaluation (same prompt as `/cu:triage` / `/cu:discover` Step 4) to produce the final category/confidence/verdict/tags/slop_label.
+3. Route using the standard three-tier rule (Curaitor/Inbox | Review | Ignored) with `source: {original source}` + `triage_source: local-model-escalated` in the frontmatter so accuracy-stats can split this population later.
+4. Write the note via `mcp__obsidian__write_note`.
+
+`drain` atomically clears the queue file, so a partial failure mid-processing means those articles are lost from the queue — if correctness matters, peek first and ack after:
+
+```bash
+# Safer pattern when the batch is large:
+python3 scripts/level2-queue.py peek > /tmp/level2-peek.json
+# ...process each article, record succeeded URLs to /tmp/processed-urls.txt...
+python3 scripts/level2-queue.py ack --urls-file /tmp/processed-urls.txt
+```
+
+After processing completes, report to the user: `Drained N level-2-pending articles (Claude auth recovered).`
+
 ### Step 1: Gather data
 
 Run the following; capture the output in working memory. Prefer scripts over reading notes directly to keep token usage near-zero.

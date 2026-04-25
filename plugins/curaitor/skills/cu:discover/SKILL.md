@@ -42,6 +42,25 @@ Articles with `_local.skip == true` (strict mode: the local model confidently ta
 
 All other articles (including `_local.skip == false` and any articles where the local model errored out) continue to Step 4 normal Claude evaluation.
 
+## Step 3.6: Enqueue escalations before Claude evaluation (cron only)
+
+If `CURAITOR_CRON=1` AND the escalation list (articles passing through to Step 4) is non-empty, write them to the level-2 pending queue *before* calling Claude:
+
+```bash
+# escalations.json = articles from Step 3.5 with _local.skip == false (or no _local)
+cat escalations.json | python3 scripts/level2-queue.py append --source rss --enqueued-by cu:discover --reason pre-claude
+```
+
+If cron Claude completes Step 4 successfully, ack those URLs after writing notes:
+
+```bash
+printf '%s\n' "${PROCESSED_URLS[@]}" | python3 scripts/level2-queue.py ack --urls-file /dev/stdin
+```
+
+If cron Claude fails (auth expired, timeout, crash), the articles stay on the queue and the next interactive `/cu:review`, `/cu:read`, `/cu:status`, or `/cu:review-ignored` session drains them (see cu:status protocol §Step 0). This is how the system survives a cron auth expiry without losing escalated articles.
+
+Skip this step when `CURAITOR_CRON` is unset — interactive runs have the authed Claude available and don't need the queue.
+
 ## Step 4: Evaluate each article
 
 For each new article, evaluate against `reading-prefs.md`.
