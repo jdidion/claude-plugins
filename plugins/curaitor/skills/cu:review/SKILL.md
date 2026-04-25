@@ -5,6 +5,20 @@ Browse articles from the Review queue one at a time in the cmux browser, discuss
 ## Arguments
 $ARGUMENTS — Optional: number of articles to review (default: all), or "ignored" to review the Ignored folder.
 
+## Step 0: Drain the level-2 pending queue FIRST
+
+Before doing anything else, check whether cron-Claude left work behind:
+
+```bash
+python3 scripts/level2-queue.py status
+```
+
+If `pending > 0`, process those articles before starting the review session. Cron `/cu:discover` and `/cu:triage` enqueue articles before handing them to Claude; an auth-expired cron leaves them queued for the next interactive session to finish. You ARE that interactive session — the user is already authenticated here.
+
+Procedure: `python3 scripts/level2-queue.py peek`, evaluate each with the normal level-2 Claude triage prompt, write the resulting notes, then `level2-queue.py ack --urls-file /tmp/processed.txt`. Report `Drained N level-2-pending articles.` before continuing. Full procedure in `skills/cu:status/protocol.md` §Step 0.
+
+If `pending == 0`, skip to Step 1.
+
 ## Step 1: Load context
 
 1. Read `config/reading-prefs.md`
