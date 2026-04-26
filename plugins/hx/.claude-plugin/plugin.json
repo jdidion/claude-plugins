@@ -1,6 +1,6 @@
 {
   "name": "hx",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Open a file in Helix in an adjacent cmux surface, with a viewer pane for file types that have one registered (markdown via glow by default; browser-viewable types fall back to the cmux browser). Orientation-aware splits; --edit toggles insert mode and live-reload.",
   "author": { "name": "John Didion" },
   "license": "MIT",
