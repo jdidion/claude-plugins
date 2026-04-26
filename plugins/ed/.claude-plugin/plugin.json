@@ -1,0 +1,8 @@
+{
+  "name": "ed",
+  "version": "0.3.0",
+  "description": "Open a file in your editor or viewer in an adjacent cmux surface. Two commands: /ed:edit (default editor or inline override) and /ed:view (default viewer with editor fallback). Per-extension editors/viewers in ~/.config/ed/config.toml; env-var and system defaults as fallbacks. Orientation-aware splits.",
+  "author": { "name": "John Didion" },
+  "license": "MIT",
+  "keywords": ["editor", "viewer", "hx", "helix", "micro", "cmux", "markdown", "preview"]
+}
