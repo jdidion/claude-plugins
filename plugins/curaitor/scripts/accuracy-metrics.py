@@ -69,7 +69,27 @@ def load_stats():
     return {}
 
 
+ROLLING_CAP = 50
+
+
+def trim_rolling_window(stats):
+    """Cap stats['rolling_window'] at ROLLING_CAP entries (FIFO, keep newest).
+
+    The skill docs long said "remove the oldest entries if rolling_window
+    exceeds 50" but no code enforced it — the list grew to ~474 entries at
+    one point, dragging rolling metrics into meaningless territory and
+    blocking graduation. save_stats now trims automatically on every write.
+    """
+    window = stats.get('rolling_window')
+    if not isinstance(window, list):
+        return stats
+    if len(window) > ROLLING_CAP:
+        stats['rolling_window'] = window[-ROLLING_CAP:]
+    return stats
+
+
 def save_stats(stats):
+    trim_rolling_window(stats)
     with open(STATS_PATH, 'w') as f:
         f.write("# Auto-updated by /cu:review and /cu:review-ignored\n")
         f.write("# Do not edit manually — use scripts/accuracy-metrics.py to view\n\n")
@@ -342,13 +362,94 @@ def backfill(stats):
     print(f"\nSaved to {STATS_PATH}")
 
 
+def cmd_trim(args):
+    """Apply the FIFO cap to rolling_window in place.
+
+    Safe to run repeatedly. If the window is already at or below
+    ROLLING_CAP, a no-op write preserves file mtime but emits a status.
+    """
+    stats = load_stats()
+    window = stats.get('rolling_window') or []
+    before = len(window)
+    if before <= ROLLING_CAP:
+        print(json.dumps({'before': before, 'after': before, 'dropped': 0, 'status': 'already-at-cap'}))
+        return
+    save_stats(stats)  # trims on write
+    after = len((load_stats() or {}).get('rolling_window') or [])
+    print(json.dumps({'before': before, 'after': after, 'dropped': before - after, 'status': 'trimmed'}))
+
+
+def cmd_record_signal(args):
+    """Append a rolling_window entry AND increment lifetime counters.
+
+    Replaces the ad-hoc inline YAML edits the skill docs described.
+    Auto-trims the rolling window, so skills don't need to.
+
+    Example:
+      python3 scripts/accuracy-metrics.py --record-signal \
+          --signal tp --source rss --title "Article Title"
+      python3 scripts/accuracy-metrics.py --record-signal \
+          --signal tp --source rss --engaged --title "Article"
+    """
+    if not args.signal or not args.source:
+        print(json.dumps({'status': 'error', 'error': 'need --signal and --source'}))
+        sys.exit(2)
+    if args.signal not in ('tp', 'fp', 'tn', 'fn', 'duplicate'):
+        print(json.dumps({'status': 'error', 'error': f'bad --signal: {args.signal}'}))
+        sys.exit(2)
+
+    stats = load_stats()
+    stats.setdefault('lifetime', {})
+    stats['lifetime'].setdefault(args.source, {'tp': 0, 'fp': 0, 'tn': 0, 'fn': 0})
+    stats['lifetime'][args.source][args.signal] = stats['lifetime'][args.source].get(args.signal, 0) + 1
+
+    # Track engaged-TP as a side-channel counter (separate from signal).
+    if args.signal == 'tp' and args.engaged:
+        stats['lifetime'][args.source]['engaged_tp'] = (
+            stats['lifetime'][args.source].get('engaged_tp', 0) + 1
+        )
+
+    entry = {
+        'date': date.today().isoformat(),
+        'signal': args.signal,
+        'source': args.source,
+    }
+    if args.title:
+        entry['title'] = args.title
+    if args.engaged:
+        entry['engaged'] = True
+    stats.setdefault('rolling_window', []).append(entry)
+
+    save_stats(stats)  # auto-trims
+    window = (load_stats() or {}).get('rolling_window') or []
+    print(json.dumps({'status': 'recorded', 'rolling_window_size': len(window)}))
+
+
 def main():
     parser = argparse.ArgumentParser(description='Curaitor accuracy metrics')
     parser.add_argument('--backfill', action='store_true', help='Backfill stats from vault state')
     parser.add_argument('--json', action='store_true', help='Output as JSON')
+    parser.add_argument('--trim', action='store_true',
+                        help='One-shot: cap rolling_window at ROLLING_CAP entries (FIFO, keep newest)')
+    parser.add_argument('--record-signal', action='store_true',
+                        help='Append a rolling_window entry + increment lifetime counters. '
+                             'Auto-trims. Requires --signal and --source; --title, --engaged optional.')
+    parser.add_argument('--signal', choices=['tp', 'fp', 'tn', 'fn', 'duplicate'],
+                        help='Signal type (used with --record-signal)')
+    parser.add_argument('--source', help='Source tag: rss|instapaper|other (used with --record-signal)')
+    parser.add_argument('--title', help='Article title for the rolling_window entry (used with --record-signal)')
+    parser.add_argument('--engaged', action='store_true',
+                        help='Mark the entry as engaged TP (used with --record-signal --signal tp)')
     args = parser.parse_args()
 
     stats = load_stats()
+
+    if args.trim:
+        cmd_trim(args)
+        return
+    if args.record_signal:
+        cmd_record_signal(args)
+        return
 
     if args.backfill:
         if 'lifetime' not in stats:
