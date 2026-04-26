@@ -46,13 +46,13 @@
       "keywords": ["context", "memory", "compaction", "session", "offload", "prompts", "logging"]
     },
     {
-      "name": "hx",
-      "source": "./plugins/hx",
-      "description": "Open a file in Helix in an adjacent cmux surface with an optional viewer pane (glow for .md by default; cmux browser for browser-viewable types). --edit toggles insert mode + live-reload. Configurable viewer per extension.",
-      "version": "0.2.0",
+      "name": "ed",
+      "source": "./plugins/ed",
+      "description": "Open a file in your editor or viewer in an adjacent cmux surface. /ed:edit and /ed:view with per-extension config (~/.config/ed/config.toml) and env-var/system fallbacks. Replaces the hx plugin.",
+      "version": "0.3.0",
       "author": { "name": "John Didion" },
       "license": "MIT",
-      "keywords": ["helix", "hx", "editor", "markdown", "viewer", "preview", "cmux"]
+      "keywords": ["editor", "viewer", "hx", "helix", "micro", "cmux", "markdown", "preview"]
     }
   ]
 }
