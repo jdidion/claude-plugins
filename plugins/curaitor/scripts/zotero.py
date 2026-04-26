@@ -79,8 +79,77 @@ def list_collections():
     return {'collections': collections}
 
 
+def _normalize_url(url):
+    """Same normalization as scripts/triage-write.py so URL comparisons
+    match across the dedup helpers. Strips http(s)://, www., trailing
+    slash, query string, and lowercases.
+    """
+    if not url:
+        return ''
+    url = url.strip().rstrip('/').lower()
+    url = url.split('?')[0]
+    if url.startswith('https://'):
+        url = url[8:]
+    elif url.startswith('http://'):
+        url = url[7:]
+    if url.startswith('www.'):
+        url = url[4:]
+    return url
+
+
+def find_by_url(url, limit=100):
+    """Return the first Zotero item whose url field normalizes to `url`,
+    or None. Paginates up to `limit` items into the library to find a match.
+
+    Uses a targeted text search on a distinctive URL suffix first to avoid
+    pulling the whole library.
+    """
+    target = _normalize_url(url)
+    if not target:
+        return None
+    # Seed search with the URL's last path segment — usually the arXiv/DOI
+    # id or the slug. Keeps Zotero from returning the full library.
+    seed = target.rstrip('/').split('/')[-1] or target
+    try:
+        q = urllib.parse.quote(seed[:80])
+        req_url = f"{ZOTERO_URL}/api/users/0/items?q={q}&limit={limit}"
+        req = urllib.request.Request(req_url, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            items = json.loads(resp.read().decode('utf-8'))
+    except Exception:
+        return None
+    for item in items:
+        data = item.get('data') or {}
+        item_url = data.get('url', '')
+        if _normalize_url(item_url) == target:
+            return {
+                'key': item.get('key', ''),
+                'title': data.get('title', ''),
+                'url': item_url,
+            }
+    return None
+
+
 def save_item(url, title=None, tags=None, collection_id=None):
-    """Save a URL to Zotero via connector."""
+    """Save a URL to Zotero via connector, skipping if the URL is already
+    in the library.
+
+    Returns one of:
+      {'saved': True,  'item_key': KEY, ...}      — newly saved
+      {'saved': False, 'item_key': KEY, 'status': 'already_saved', ...}
+                                                    — pre-existing item
+      {'saved': True,  'item_key': None}          — saved but key lookup failed
+    """
+    existing = find_by_url(url)
+    if existing:
+        return {
+            'saved': False,
+            'status': 'already_saved',
+            'item_key': existing['key'],
+            'title': existing['title'],
+            'url': existing['url'],
+        }
+
     config = load_config()
     target_id = collection_id or config.get('collection_id', '')
 
