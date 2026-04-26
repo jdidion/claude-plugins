@@ -193,9 +193,25 @@ The user can type:
 ### h. Handle verdict
 
 - **r** → Save to Zotero via API. Add discussion notes as a Zotero note attachment. Delete from Obsidian `Curaitor/Inbox/`.
-- **t** → Attach to topic (same flow as `/cu:review` topic mode). Add article summary + discussion notes under the topic. Delete from `Curaitor/Inbox/`.
-- **c** → Star GitHub repo (`gh api user/starred/OWNER/REPO -X PUT`), add to `Tools & Projects.md`, delete from `Curaitor/Inbox/`.
-- **b** → **Bookmark**: save the link to `Bookmarks.md` in Obsidian vault root (organized by category, same format as Tools & Projects). If `config/user-settings.yaml` has `bookmark_command`, run that instead. Delete from `Curaitor/Inbox/`.
+- **t** → Attach to topic via the dedup-safe helper (same flow as `/cu:review` topic mode). Discussion notes still go as a separate Zotero note or sub-entry. Delete from `Curaitor/Inbox/` after.
+  ```bash
+  python3 scripts/triage-write.py --attach-to-topic \
+    --url "$URL" --title "$TITLE" --topic "$TOPIC_NAME" \
+    [--description "one-line summary"] [--create-if-missing]
+  ```
+  Skips if the URL is already linked under `## Related Articles` in the topic.
+- **c** → Star GitHub repo (`gh api user/starred/OWNER/REPO -X PUT`), add to `Tools & Projects.md` via the dedup-safe helper, delete from `Curaitor/Inbox/`.
+  ```bash
+  python3 scripts/triage-write.py --add-to-catalog \
+    --url "$URL" --title "$TITLE" --catalog "Tools & Projects.md" \
+    --category "$CATEGORY" --description "$DESCRIPTION"
+  ```
+- **b** → **Bookmark**: save the link via the dedup-safe helper, then delete from `Curaitor/Inbox/`. If `config/user-settings.yaml` has `bookmark_command`, run that instead.
+  ```bash
+  python3 scripts/triage-write.py --add-to-catalog \
+    --url "$URL" --title "$TITLE" --catalog "Bookmarks.md" \
+    --category "$CATEGORY" --description "$DESCRIPTION"
+  ```
 - **p** → **Post to Slack**: same flow as `/cu:review` — prompt for channel (default from `config/user-settings.yaml`), draft message, present for editing, send via `mcp__slack-mcp__send_slack_message`, then archive with reason "Posted to Slack #{channel}". Delete from `Curaitor/Inbox/`.
 - **n** → **Recycle**: append via the dedup-safe helper (never `mcp__obsidian__write_note --mode append` directly):
    ```bash
