@@ -17,7 +17,19 @@ If `pending > 0`, process those articles BEFORE starting the read session. Cron 
 
 Procedure: `python3 scripts/level2-queue.py peek`, evaluate each with the normal level-2 Claude triage prompt, write the resulting notes, then `level2-queue.py ack --urls-file /tmp/processed.txt`. Report `Drained N level-2-pending articles.` before continuing. Full procedure in `skills/cu:status/protocol.md` §Step 0. Articles that land in `Curaitor/Inbox/` after this step will show up in the listing for Step 1.
 
-If `pending == 0`, skip to Step 1.
+If `pending == 0`, skip to Step 0.5.
+
+## Step 0.5: Reap leftover notes
+
+Run the leftover detector to find Inbox notes whose URL is already attached to a Topic, the Tools & Projects catalog, or Bookmarks. These are the residue of prior sessions where the `t`/`c`/`b` verdict ran but the post-verdict `delete_note` was skipped:
+
+```bash
+python3 scripts/triage-write.py --find-leftovers
+```
+
+For each reported leftover, delete the Inbox note via `mcp__obsidian__delete_note` — the curated catalog already holds the canonical reference, so the Inbox copy is redundant and will just ask the user to re-decide. Report `Reaped N leftover Inbox notes (already referenced by topics/catalogs).` before continuing.
+
+If `leftover_count == 0`, proceed silently to Step 1.
 
 ## Step 1: Load context
 
@@ -173,7 +185,7 @@ The user can type:
 - **t Topic Name** — Attach to a specific topic (existing or new), remove from Inbox
 - **c** — Clip: star GitHub repo + add to Tools & Projects catalog, remove from Inbox (for tools/libraries)
 - **p** — Post to Slack, then archive (same flow as `/cu:review` post — prompt for channel, draft message, send)
-- **n** — Recycle: read it, not keeping. Appends `- [title](url)` to `Curaitor/Recycle.md`. This is NOT a triage quality signal — triage correctly put it in Inbox.
+- **n** — Recycle: read it, not keeping. Appends via the dedup-safe helper (see §h for command). This is NOT a triage quality signal — triage correctly put it in Inbox.
 - **skip** — Leave in Inbox, move to next article
 - **q** — Quit, show session summary
 - Any other text — continue the discussion
@@ -185,7 +197,11 @@ The user can type:
 - **c** → Star GitHub repo (`gh api user/starred/OWNER/REPO -X PUT`), add to `Tools & Projects.md`, delete from `Curaitor/Inbox/`.
 - **b** → **Bookmark**: save the link to `Bookmarks.md` in Obsidian vault root (organized by category, same format as Tools & Projects). If `config/user-settings.yaml` has `bookmark_command`, run that instead. Delete from `Curaitor/Inbox/`.
 - **p** → **Post to Slack**: same flow as `/cu:review` — prompt for channel (default from `config/user-settings.yaml`), draft message, present for editing, send via `mcp__slack-mcp__send_slack_message`, then archive with reason "Posted to Slack #{channel}". Delete from `Curaitor/Inbox/`.
-- **n** → **Recycle**: append `- [title](url)` to `Curaitor/Recycle.md`, delete from `Curaitor/Inbox/`. NOT a triage quality signal — triage was correct to route this to Inbox.
+- **n** → **Recycle**: append via the dedup-safe helper (never `mcp__obsidian__write_note --mode append` directly):
+   ```bash
+   python3 scripts/triage-write.py --add-to-recycle --url "$URL" --title "$TITLE"
+   ```
+   Then delete from `Curaitor/Inbox/`. The helper normalizes URLs and skips the write if the URL is already in the live Recycle.md or a recent monthly archive, preventing duplicate-line accumulation. NOT a triage quality signal — triage was correct to route this to Inbox.
 - **skip** → Leave in `Curaitor/Inbox/`, move to next article.
 - **q** → Stop, show session summary.
 

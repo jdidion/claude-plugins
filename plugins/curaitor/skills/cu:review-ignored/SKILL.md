@@ -27,7 +27,11 @@ If `pending == 0`, skip to Step 1.
    python3 scripts/prefetch-review.py ignored --days $DAYS --include-meta
    ```
    This returns JSON with all articles, vault tags, and topics. Use this data for grouping instead of individual MCP calls.
-3. **Dedup first**: Before presenting articles, run URL dedup against the full vault. Duplicates are common in Ignored (39% in one session). Recycle all duplicates immediately — append `- [title](url) (duplicate)` to `Curaitor/Recycle.md` and delete notes. Report: "Recycled N duplicates before review."
+3. **Dedup first**: Before presenting articles, run URL dedup against the full vault. Duplicates are common in Ignored (39% in one session). Recycle all duplicates immediately via the dedup-safe helper, then delete the notes:
+   ```bash
+   python3 scripts/triage-write.py --add-to-recycle --url "$URL" --title "$TITLE" --tag "(duplicate)"
+   ```
+   Report: "Recycled N duplicates before review." The helper skips the write if the URL is already recorded, preventing repeat-session duplicate-line accumulation.
 4. **Filter already-reviewed**: Skip articles that have `reviewed_ignored` in their frontmatter (already reviewed in a previous session). Report: "Skipping N previously reviewed articles." If $ARGUMENTS includes `all`, include them anyway.
 
 ## Step 2: Group by ignore reason and present batches
@@ -80,7 +84,11 @@ review_decision: tn  # or fn
 This prevents re-review in future sessions and creates an audit trail.
 
 Then process the verdict:
-- **"all good"** / **"none"** → tag all as `review_decision: tn`, then recycle: append `- [title](url)` to `Curaitor/Recycle.md`, delete from `Curaitor/Ignored/`. **True negatives** — triage was correct.
+- **"all good"** / **"none"** → tag all as `review_decision: tn`, then recycle each via the dedup-safe helper and delete from `Curaitor/Ignored/`:
+  ```bash
+  python3 scripts/triage-write.py --add-to-recycle --url "$URL" --title "$TITLE"
+  ```
+  **True negatives** — triage was correct.
 - **"rescue N,N"** or article numbers from the flagged list → tag as `review_decision: fn`, then move to `Curaitor/Review/`. **False negatives** — agent analyzes WHY and updates preferences.
 - **"show me [category]"** → expand that category to show all titles, let user pick
 - **"rescue [category] N,N"** → rescue specific articles from an expanded category
