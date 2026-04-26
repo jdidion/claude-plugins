@@ -563,6 +563,231 @@ def cmd_add_to_recycle(args):
     }))
 
 
+_SETTINGS_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), '..', 'config', 'user-settings.yaml'
+)
+
+
+def _load_settings():
+    if not os.path.isfile(_SETTINGS_PATH):
+        return {}
+    try:
+        with open(_SETTINGS_PATH) as f:
+            return yaml.safe_load(f) or {}
+    except (OSError, yaml.YAMLError):
+        return {}
+
+
+def _topic_roots():
+    """Obsidian topic folders to scan. Configurable via
+    user-settings.yaml:topic_roots; defaults to the two historical locations.
+    """
+    roots = (_load_settings() or {}).get('topic_roots')
+    if isinstance(roots, list) and roots:
+        return [str(r) for r in roots]
+    return ['Personal/Topics', 'Topics']
+
+
+def _extract_urls(text):
+    """Return normalized URLs found in `text`. Matches Obsidian `[t](url)`
+    markdown links and bare URLs.
+    """
+    url_pat = re.compile(r'https?://[^\s)\]<>"]+', re.IGNORECASE)
+    return {normalize_url(m.group(0).rstrip(').,;:')) for m in url_pat.finditer(text)}
+
+
+def _urls_in_section(content, heading):
+    """Return normalized URLs found under a specific `## Heading` section of a
+    markdown file. Scan stops at the next heading of equal or higher level.
+    """
+    if not heading:
+        return _extract_urls(content)
+    # Find the heading line (loose match — "## Related Articles" matches any hash level)
+    pat = re.compile(r'^(#+)\s+' + re.escape(heading) + r'\s*$', re.MULTILINE)
+    m = pat.search(content)
+    if not m:
+        return set()
+    start_level = len(m.group(1))
+    start = m.end()
+    # Find the next heading at or above start_level
+    rest = content[start:]
+    end_pat = re.compile(r'^(#{1,' + str(start_level) + r'})\s+\S', re.MULTILINE)
+    end_m = end_pat.search(rest)
+    section = rest if not end_m else rest[:end_m.start()]
+    return _extract_urls(section)
+
+
+def cmd_attach_to_topic(args):
+    """Append a `[title](url)` link under a heading in a Topic note, skipping
+    if the URL is already linked anywhere in that section.
+
+    Dedup-safe replacement for the skills' bare `mcp__obsidian__patch_note`
+    pattern that doesn't check for existing links. Mirrors --add-to-recycle's
+    JSON-status contract.
+
+    Looks up the topic file by matching `<topic>.md` under each path in
+    user-settings.yaml:topic_roots (defaults: Personal/Topics, Topics). If
+    multiple match, the first found wins. If none match, --create-if-missing
+    picks the first topic_root.
+    """
+    vault = find_vault()
+    url = (args.url or '').strip()
+    title = (args.title or '').strip() or url
+    topic = (args.topic or '').strip()
+    section = (args.section or 'Related Articles').strip()
+    if not url or not topic:
+        print(json.dumps({'status': 'error', 'error': 'need --url and --topic'}))
+        sys.exit(2)
+
+    # Locate the topic file
+    topic_file = f'{topic}.md'
+    topic_path = None
+    roots = _topic_roots()
+    for root in roots:
+        candidate = os.path.join(vault, root, topic_file)
+        if os.path.isfile(candidate):
+            topic_path = candidate
+            break
+    if topic_path is None:
+        if not args.create_if_missing:
+            print(json.dumps({
+                'status': 'error',
+                'error': 'topic not found',
+                'topic': topic,
+                'searched': roots,
+            }))
+            sys.exit(1)
+        topic_path = os.path.join(vault, roots[0], topic_file)
+        os.makedirs(os.path.dirname(topic_path), exist_ok=True)
+        with open(topic_path, 'w', encoding='utf-8') as f:
+            f.write(f'# {topic}\n\n## {section}\n\n')
+
+    with open(topic_path, encoding='utf-8') as f:
+        content = f.read()
+
+    norm = normalize_url(url)
+    existing = _urls_in_section(content, section)
+    if norm in existing:
+        print(json.dumps({
+            'status': 'skipped',
+            'reason': f'already linked under ## {section}',
+            'topic_path': os.path.relpath(topic_path, vault),
+            'url': url,
+        }))
+        return
+
+    # Find the section heading; append under it. If section missing, append at EOF.
+    heading_pat = re.compile(r'^(#+)\s+' + re.escape(section) + r'\s*$', re.MULTILINE)
+    m = heading_pat.search(content)
+    new_entry = f'- [{title}]({url})'
+    if args.description:
+        new_entry += f' — {args.description}'
+    new_entry += '\n'
+
+    if not m:
+        # Append section + entry
+        if not content.endswith('\n'):
+            content += '\n'
+        content += f'\n## {section}\n\n{new_entry}'
+    else:
+        # Insert directly after the heading line (and any immediately-following blank line)
+        insert_at = m.end()
+        if insert_at < len(content) and content[insert_at] == '\n':
+            insert_at += 1
+        if insert_at < len(content) and content[insert_at] == '\n':
+            insert_at += 1
+        content = content[:insert_at] + new_entry + content[insert_at:]
+
+    with open(topic_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+
+    print(json.dumps({
+        'status': 'appended',
+        'topic_path': os.path.relpath(topic_path, vault),
+        'section': section,
+        'url': url,
+    }))
+
+
+def cmd_add_to_catalog(args):
+    """Append an entry to a vault-root catalog file (Tools & Projects.md,
+    Bookmarks.md, or any other). Skips if the URL already appears under the
+    target category (or anywhere in the file if --category is omitted).
+
+    Used by the /cu:review and /cu:read `c` (Clip) and `b` (Bookmark)
+    verdicts. Mirrors --add-to-recycle's JSON-status contract.
+    """
+    vault = find_vault()
+    url = (args.url or '').strip()
+    title = (args.title or '').strip() or url
+    catalog = (args.catalog or '').strip()
+    category = (args.category or '').strip() or None
+    description = (args.description or '').strip() or None
+    if not url or not catalog:
+        print(json.dumps({'status': 'error', 'error': 'need --url and --catalog'}))
+        sys.exit(2)
+
+    catalog_path = os.path.join(vault, catalog)
+    if not os.path.isfile(catalog_path):
+        if not args.create_if_missing:
+            print(json.dumps({
+                'status': 'error',
+                'error': 'catalog not found',
+                'catalog_path': catalog_path,
+            }))
+            sys.exit(1)
+        with open(catalog_path, 'w', encoding='utf-8') as f:
+            f.write(f'# {os.path.splitext(os.path.basename(catalog))[0]}\n\n')
+
+    with open(catalog_path, encoding='utf-8') as f:
+        content = f.read()
+
+    norm = normalize_url(url)
+    existing = _urls_in_section(content, category) if category else _extract_urls(content)
+    if norm in existing:
+        print(json.dumps({
+            'status': 'skipped',
+            'reason': f'already in {category or "file"}',
+            'catalog_path': os.path.relpath(catalog_path, vault),
+            'url': url,
+        }))
+        return
+
+    new_entry = f'- [{title}]({url})'
+    if description:
+        new_entry += f' — {description}'
+    new_entry += '\n'
+
+    if category:
+        heading_pat = re.compile(r'^(#+)\s+' + re.escape(category) + r'\s*$', re.MULTILINE)
+        m = heading_pat.search(content)
+        if not m:
+            if not content.endswith('\n'):
+                content += '\n'
+            content += f'\n## {category}\n\n{new_entry}'
+        else:
+            insert_at = m.end()
+            if insert_at < len(content) and content[insert_at] == '\n':
+                insert_at += 1
+            if insert_at < len(content) and content[insert_at] == '\n':
+                insert_at += 1
+            content = content[:insert_at] + new_entry + content[insert_at:]
+    else:
+        if not content.endswith('\n'):
+            content += '\n'
+        content += new_entry
+
+    with open(catalog_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+
+    print(json.dumps({
+        'status': 'appended',
+        'catalog_path': os.path.relpath(catalog_path, vault),
+        'category': category,
+        'url': url,
+    }))
+
+
 def cmd_find_leftovers(args):
     """Scan Curaitor/Inbox and Curaitor/Review for notes whose URL is already
     present in a Topic note (Personal/Topics/*.md or Topics/*.md), the
@@ -581,7 +806,7 @@ def cmd_find_leftovers(args):
     # Gather URLs from topics / tools / bookmarks, keyed so we can report where
     # the match came from.
     curated_sources = []
-    for folder in ('Personal/Topics', 'Topics'):
+    for folder in _topic_roots():
         p = os.path.join(vault, folder)
         if os.path.isdir(p):
             curated_sources.append(('topic', folder, p))
@@ -735,9 +960,26 @@ def main():
                         help='Scan Inbox/Review for notes whose URL is already present '
                              'in a Topic note, Tools & Projects, or Bookmarks.md. These '
                              'indicate a missed delete after a t/c/b verdict.')
-    parser.add_argument('--url', help='URL (used with --add-to-recycle)')
-    parser.add_argument('--title', help='Title for the recycle entry (used with --add-to-recycle)')
+    parser.add_argument('--attach-to-topic', action='store_true',
+                        help='Append a [title](url) link under a heading in a Topic note, '
+                             'skipping if the URL is already linked there. '
+                             'Requires --url and --topic; --title, --section, --description, '
+                             '--create-if-missing optional.')
+    parser.add_argument('--add-to-catalog', action='store_true',
+                        help='Append a [title](url) line to a vault-root catalog file '
+                             '(Tools & Projects.md, Bookmarks.md, etc.), skipping if the URL '
+                             'is already listed. Requires --url and --catalog; --category, '
+                             '--title, --description, --create-if-missing optional.')
+    parser.add_argument('--url', help='URL (used with --add-to-recycle / --attach-to-topic / --add-to-catalog)')
+    parser.add_argument('--title', help='Link title (used with the append commands)')
     parser.add_argument('--tag', help='Optional suffix tag like "(duplicate)" (used with --add-to-recycle)')
+    parser.add_argument('--topic', help='Topic name without .md (used with --attach-to-topic)')
+    parser.add_argument('--section', help='Section heading in the topic (default "Related Articles")')
+    parser.add_argument('--catalog', help='Catalog filename relative to vault root (used with --add-to-catalog)')
+    parser.add_argument('--category', help='Section heading within the catalog (used with --add-to-catalog)')
+    parser.add_argument('--description', help='Optional " — description" suffix on the appended line')
+    parser.add_argument('--create-if-missing', action='store_true',
+                        help='Create the topic or catalog file if it does not exist')
     parser.add_argument('--dry-run', action='store_true',
                         help='With --dedup-recycle: report without modifying the file')
     parser.add_argument('--urls', nargs='+', help='URLs to check (dedup mode)')
@@ -752,6 +994,10 @@ def main():
         cmd_dedup_recycle(args)
     elif args.add_to_recycle:
         cmd_add_to_recycle(args)
+    elif args.attach_to_topic:
+        cmd_attach_to_topic(args)
+    elif args.add_to_catalog:
+        cmd_add_to_catalog(args)
     elif args.find_leftovers:
         cmd_find_leftovers(args)
     elif args.dedup_only:

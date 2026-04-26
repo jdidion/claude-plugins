@@ -25,6 +25,15 @@ recycle_rollover_threshold: 1000
 # re-surfacings. Default 3 ≈ 90 days at the default rollover cadence.
 recycle_archive_window: 3
 
+# Obsidian folders that hold Topic notes. Used by triage-write.py's
+# --find-leftovers scan and --attach-to-topic helper to locate topic files.
+# The historical layout splits topics between "Personal/Topics" (user's
+# private taxonomy) and "Topics" (shared), so both are scanned by default.
+# Override if you reorganize.
+topic_roots:
+  - "Personal/Topics"
+  - "Topics"
+
 # Optional: a memory-frugal local model (via Ollama) handles the first-round
 # triage pass — confidently-not-interesting articles auto-skip to Ignored
 # without a Claude call, saving ~40% of Claude usage per cycle. See

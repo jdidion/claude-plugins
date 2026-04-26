@@ -254,14 +254,31 @@ The user can type:
 - **y** → move to `Curaitor/Inbox/`, update frontmatter with tags. If repo detected: star it and add to Tools catalog. **True positive** — triage was right to flag this for review.
 - **t** → **Topic mode**: attach article to a topic, then delete from Curaitor/Review/ (article lives under the topic, not separately):
   - If user typed `t` alone and related topics were found: list them, ask which one (or "new")
-  - If user typed `t <topic name>`: use that topic (create in `Topics/` if new)
-  - Add article as a `[[wiki-link]]` under `## Related Articles` in the topic note
-  - Add article URL, title, and summary as a sub-entry in the topic note
-  - If repo detected: also star it and add to Tools catalog
-  - Delete the article from `Curaitor/Review/` — it's now referenced from the topic, no need to keep separately
+  - If user typed `t <topic name>`: use that topic (create with `--create-if-missing` if new)
+  - **Use the dedup-safe helper** — do NOT patch the topic note directly:
+    ```bash
+    python3 scripts/triage-write.py --attach-to-topic \
+      --url "$URL" --title "$TITLE" --topic "$TOPIC_NAME" \
+      [--section "Related Articles"] [--description "one-line summary"] \
+      [--create-if-missing]
+    ```
+    The helper skips the append if the URL is already linked under the section. Parse the JSON status — `skipped` means the topic already has it (still proceed to delete the source note).
+  - If repo detected: also star it and add to Tools catalog (via `--add-to-catalog`, see `c` verdict below)
+  - Delete the article from `Curaitor/Review/` via `mcp__obsidian__delete_note` — it's now referenced from the topic, no need to keep separately
   - **True positive** — triage was right.
-- **c** → **Clip**: add repo/tool to `Tools & Projects.md`, star if GitHub, delete article from `Curaitor/Review/`. **True positive**.
-- **b** → **Bookmark**: save the link to `Bookmarks.md` in Obsidian vault root (see Bookmark format below), then delete from `Curaitor/Review/`. If `config/user-settings.yaml` has a custom `bookmark_command`, run that instead. **True positive**.
+- **c** → **Clip**: add repo/tool to `Tools & Projects.md` via the dedup-safe helper, star if GitHub, delete article from `Curaitor/Review/`. **True positive**.
+  ```bash
+  python3 scripts/triage-write.py --add-to-catalog \
+    --url "$URL" --title "$TITLE" --catalog "Tools & Projects.md" \
+    --category "$CATEGORY" --description "$DESCRIPTION"
+  ```
+  Skips if the URL is already in the catalog under the target category.
+- **b** → **Bookmark**: save the link via the dedup-safe helper, then delete from `Curaitor/Review/`. If `config/user-settings.yaml` has a custom `bookmark_command`, run that instead. **True positive**.
+  ```bash
+  python3 scripts/triage-write.py --add-to-catalog \
+    --url "$URL" --title "$TITLE" --catalog "Bookmarks.md" \
+    --category "$CATEGORY" --description "$DESCRIPTION"
+  ```
 - **r** → save to Zotero via API, move to `Curaitor/Inbox/`, add zotero_key to frontmatter. **True positive**.
 - **p** → **Post to Slack** (see Post flow below), then recycle the article. **True positive**.
 - **n** → **Recycle**: the user has reviewed this and doesn't want to keep it. Signal depends on engagement (see below):
