@@ -44,7 +44,7 @@ Determine `VIEWER_CMD`:
 1. If `$EDIT` is set **and** `HX_VIEWER_<EXT>_WATCH` is set, use that (live-reload variant).
 2. Else if `HX_VIEWER_<EXT>` is set, use that.
 3. Else if `$EDIT` is NOT set and the default for this extension is defined (see below), use it.
-4. Else if the extension is browser-viewable (see below), use `cmux browser open file://"$RESOLVED_PATH"` (cmux creates a browser surface in the new-pane direction).
+4. Else if the extension is browser-viewable (see below), the browser fallback in Step 5 is used (it splits the editor pane and opens a browser surface there).
 5. Else: no viewer. Skip the viewer pane.
 
 ### Built-in defaults
@@ -67,13 +67,17 @@ All other extensions without an explicit viewer get no viewer pane.
 
 ## Step 3: Find or create the editor surface
 
+Helper to list all `surface:N` refs in the current workspace (sorted):
+
 ```bash
-cmux list-pane-surfaces
+ws_surfaces() {
+    cmux tree --workspace "$CMUX_WORKSPACE_ID" \
+        | grep -oE 'surface:[0-9]+' \
+        | sort -u
+}
 ```
 
-Reuse the first terminal surface whose ref is NOT the current `$CMUX_SURFACE_ID`.
-
-If none exists, create one. The direction is monitor-orientation-aware:
+List existing surfaces and reuse the first terminal surface whose ref is NOT `$CMUX_SURFACE_ID`. If none exists, create one:
 
 ```bash
 ORIENT="${HX_MONITOR:-${CURAITOR_MONITOR:-horizontal}}"
@@ -82,10 +86,14 @@ if [ "$ORIENT" = "vertical" ]; then
 else
     EDITOR_DIR=right
 fi
-cmux new-pane --type terminal --direction "$EDITOR_DIR"
+
+BEFORE=$(ws_surfaces)
+cmux new-split "$EDITOR_DIR" --surface "$CMUX_SURFACE_ID"
+AFTER=$(ws_surfaces)
+EDITOR=$(comm -13 <(echo "$BEFORE") <(echo "$AFTER") | head -1)
 ```
 
-Store the surface ref as `EDITOR`.
+`EDITOR` now holds the new surface ref (e.g. `surface:6`).
 
 ## Step 4: Launch Helix
 
@@ -122,21 +130,43 @@ else
 fi
 ```
 
-**Terminal viewer** (e.g. `glow`, `csvlens`, a watch-wrapper): create a terminal pane and send the command.
+**CRITICAL**: The viewer must split from `$EDITOR`, not from the Claude pane. Use `cmux new-split <dir> --surface <ref>` — `cmux new-pane` does NOT accept `--surface` and will silently split the focused pane instead, producing a broken layout (viewer below Claude, editor alone in the other column).
+
+**Terminal viewer** (e.g. `glow`, `csvlens`, a watch-wrapper): split the editor pane, diff the surface list to capture the new ref, then send the command.
 
 ```bash
-cmux new-pane --type terminal --direction "$VIEWER_DIR" --surface "$EDITOR"
-# Capture returned surface ref as VIEWER
+BEFORE=$(ws_surfaces)
+cmux new-split "$VIEWER_DIR" --surface "$EDITOR"
+AFTER=$(ws_surfaces)
+VIEWER=$(comm -13 <(echo "$BEFORE") <(echo "$AFTER") | head -1)
+
 cmux send --surface "$VIEWER" "$VIEWER_CMD '$RESOLVED_PATH'"
 cmux send-key --surface "$VIEWER" Enter
 cmux rename-tab --surface "$VIEWER" "view: $(basename "$RESOLVED_PATH")"
 ```
 
-**Browser viewer fallback** (cmux builtin): use `cmux browser open` rather than spawning a terminal. It creates a browser surface in the requested direction:
+**Browser viewer fallback** (cmux builtin): split the editor to create a new terminal pane, then add a browser tab in that pane and close the terminal placeholder.
 
 ```bash
-cmux browser open --direction "$VIEWER_DIR" "file://$RESOLVED_PATH"
-# Capture the returned surface ref as VIEWER
+BEFORE=$(ws_surfaces)
+cmux new-split "$VIEWER_DIR" --surface "$EDITOR"
+AFTER=$(ws_surfaces)
+TERM_VIEWER=$(comm -13 <(echo "$BEFORE") <(echo "$AFTER") | head -1)
+
+# Find the pane the new terminal surface lives in.
+NEW_PANE=$(cmux tree --workspace "$CMUX_WORKSPACE_ID" \
+    | awk -v s="$TERM_VIEWER" '
+        /pane pane:[0-9]+/ { match($0, /pane:[0-9]+/); p = substr($0, RSTART, RLENGTH) }
+        index($0, s) { print p; exit }
+    ')
+
+# Add a browser surface to that pane, then close the terminal placeholder.
+BEFORE=$(ws_surfaces)
+cmux new-surface --type browser --pane "$NEW_PANE" --url "file://$RESOLVED_PATH"
+AFTER=$(ws_surfaces)
+VIEWER=$(comm -13 <(echo "$BEFORE") <(echo "$AFTER") | head -1)
+cmux close-surface --surface "$TERM_VIEWER"
+
 cmux rename-tab --surface "$VIEWER" "view: $(basename "$RESOLVED_PATH")"
 ```
 
