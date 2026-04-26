@@ -517,6 +517,144 @@ def cmd_dedup(args):
     )
 
 
+def cmd_add_to_recycle(args):
+    """Append a single entry to Curaitor/Recycle.md, skipping if the URL is
+    already recorded there or in an archived Recycle-YYYY-MM.md.
+
+    This is the dedup-safe replacement for the review/read skills' manual
+    `mcp__obsidian__write_note --mode append` pattern, which had no awareness
+    of existing entries and produced duplicates like the 2026-04-26 session's
+    double-append of the direct-RNA paper.
+
+    Exits 0 and prints a JSON status line on both the "appended" and "skipped"
+    paths — callers should parse the JSON, not rely on exit codes alone.
+    """
+    vault = find_vault()
+    url = (args.url or '').strip()
+    title = (args.title or '').strip() or url
+    if not url:
+        print(json.dumps({'status': 'error', 'error': 'missing --url'}))
+        sys.exit(2)
+
+    norm = normalize_url(url)
+    recycled_urls = build_recycle_index(vault)
+    if norm in recycled_urls:
+        print(json.dumps({
+            'status': 'skipped',
+            'reason': 'already in recycle (live or archive)',
+            'url': url,
+            'normalized': norm,
+        }))
+        return
+
+    recycle_path = os.path.join(vault, 'Curaitor', 'Recycle.md')
+    os.makedirs(os.path.dirname(recycle_path), exist_ok=True)
+    line = f"- [{title}]({url})"
+    if args.tag:
+        line += f" {args.tag}"
+    line += '\n'
+    with open(recycle_path, 'a', encoding='utf-8') as rf:
+        rf.write(line)
+    print(json.dumps({
+        'status': 'appended',
+        'recycle_path': recycle_path,
+        'url': url,
+        'normalized': norm,
+    }))
+
+
+def cmd_find_leftovers(args):
+    """Scan Curaitor/Inbox and Curaitor/Review for notes whose URL is already
+    present in a Topic note (Personal/Topics/*.md or Topics/*.md), the
+    Tools & Projects catalog, or the Bookmarks list.
+
+    These are "leftover" Inbox/Review notes — the user already made a
+    disposition decision (attached to topic, clipped to Tools, bookmarked)
+    but the source note wasn't deleted afterward. The /cu:review and
+    /cu:read skills should delete the source note after every t/c/b verdict,
+    but manual-edit paths and some past versions didn't.
+
+    Prints JSON listing each leftover with the topic/catalog it's already in.
+    Safe to run at the start of every interactive session as a pre-flight.
+    """
+    vault = find_vault()
+    # Gather URLs from topics / tools / bookmarks, keyed so we can report where
+    # the match came from.
+    curated_sources = []
+    for folder in ('Personal/Topics', 'Topics'):
+        p = os.path.join(vault, folder)
+        if os.path.isdir(p):
+            curated_sources.append(('topic', folder, p))
+    for catalog_name in ('Tools & Projects.md', 'Bookmarks.md'):
+        p = os.path.join(vault, catalog_name)
+        if os.path.isfile(p):
+            curated_sources.append(('catalog', catalog_name, p))
+
+    # URL-in-content regex: matches Obsidian markdown links [text](url) and
+    # bare URLs. We only need the URL; titles are captured separately.
+    url_pat = re.compile(r'https?://[^\s)\]<>"]+', re.IGNORECASE)
+
+    url_to_source = {}  # norm_url -> [(kind, name, file_rel, raw_url), ...]
+    for kind, name, path in curated_sources:
+        files = []
+        if os.path.isdir(path):
+            for root, _dirs, names in os.walk(path):
+                for f in names:
+                    if f.endswith('.md') and not f.startswith('.'):
+                        files.append(os.path.join(root, f))
+        else:
+            files.append(path)
+        for fpath in files:
+            try:
+                with open(fpath, encoding='utf-8') as fh:
+                    content = fh.read()
+            except (OSError, UnicodeDecodeError):
+                continue
+            for m in url_pat.finditer(content):
+                raw = m.group(0).rstrip(').,;:')
+                norm = normalize_url(raw)
+                url_to_source.setdefault(norm, []).append({
+                    'kind': kind,
+                    'name': name,
+                    'file': os.path.relpath(fpath, vault),
+                    'raw_url': raw,
+                })
+
+    # Now walk Inbox/Review and check each note's frontmatter URL.
+    leftovers = []
+    scan_folders = ['Curaitor/Inbox', 'Curaitor/Review']
+    for folder in scan_folders:
+        p = os.path.join(vault, folder)
+        if not os.path.isdir(p):
+            continue
+        for f in sorted(os.listdir(p)):
+            if not f.endswith('.md') or f.startswith('.'):
+                continue
+            note_path = os.path.join(p, f)
+            head = read_frontmatter_only(note_path)
+            urlm = _URL_LINE.search(head)
+            if not urlm:
+                continue
+            raw_note_url = urlm.group(1).strip().strip('"').strip("'")
+            norm = normalize_url(raw_note_url)
+            if norm in url_to_source:
+                leftovers.append({
+                    'note': os.path.relpath(note_path, vault),
+                    'url': raw_note_url,
+                    'normalized': norm,
+                    'matches': url_to_source[norm],
+                })
+
+    json.dump({
+        'vault': vault,
+        'scanned_folders': scan_folders,
+        'curated_sources': [{'kind': k, 'name': n} for (k, n, _p) in curated_sources],
+        'leftover_count': len(leftovers),
+        'leftovers': leftovers,
+    }, sys.stdout, indent=2)
+    print(file=sys.stdout)
+
+
 def cmd_dedup_recycle(args):
     """Collapse duplicate lines in Curaitor/Recycle.md by normalized URL.
 
@@ -589,6 +727,17 @@ def main():
                         help='Only check for duplicates, do not write notes')
     parser.add_argument('--dedup-recycle', action='store_true',
                         help='Collapse duplicate lines in Curaitor/Recycle.md (one-time cleanup)')
+    parser.add_argument('--add-to-recycle', action='store_true',
+                        help='Append a single entry to Curaitor/Recycle.md, skipping if '
+                             'the URL is already present in the live file or recent archives. '
+                             'Requires --url; --title and --tag optional.')
+    parser.add_argument('--find-leftovers', action='store_true',
+                        help='Scan Inbox/Review for notes whose URL is already present '
+                             'in a Topic note, Tools & Projects, or Bookmarks.md. These '
+                             'indicate a missed delete after a t/c/b verdict.')
+    parser.add_argument('--url', help='URL (used with --add-to-recycle)')
+    parser.add_argument('--title', help='Title for the recycle entry (used with --add-to-recycle)')
+    parser.add_argument('--tag', help='Optional suffix tag like "(duplicate)" (used with --add-to-recycle)')
     parser.add_argument('--dry-run', action='store_true',
                         help='With --dedup-recycle: report without modifying the file')
     parser.add_argument('--urls', nargs='+', help='URLs to check (dedup mode)')
@@ -601,6 +750,10 @@ def main():
 
     if args.dedup_recycle:
         cmd_dedup_recycle(args)
+    elif args.add_to_recycle:
+        cmd_add_to_recycle(args)
+    elif args.find_leftovers:
+        cmd_find_leftovers(args)
     elif args.dedup_only:
         cmd_dedup(args)
     else:

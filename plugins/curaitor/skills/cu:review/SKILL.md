@@ -17,7 +17,19 @@ If `pending > 0`, process those articles before starting the review session. Cro
 
 Procedure: `python3 scripts/level2-queue.py peek`, evaluate each with the normal level-2 Claude triage prompt, write the resulting notes, then `level2-queue.py ack --urls-file /tmp/processed.txt`. Report `Drained N level-2-pending articles.` before continuing. Full procedure in `skills/cu:status/protocol.md` §Step 0.
 
-If `pending == 0`, skip to Step 1.
+If `pending == 0`, skip to Step 0.5.
+
+## Step 0.5: Reap leftover notes
+
+After the Level-2 drain but before loading the queue, run the leftover detector to find Review notes whose URL is already attached to a Topic, the Tools & Projects catalog, or Bookmarks. These are the residue of prior sessions where the `t`/`c`/`b` verdict ran but the post-verdict `delete_note` was skipped:
+
+```bash
+python3 scripts/triage-write.py --find-leftovers
+```
+
+For each reported leftover, delete the Review note via `mcp__obsidian__delete_note` (the curated catalog already holds the canonical reference). Report `Reaped N leftover review notes (already referenced by topics/catalogs).` before continuing.
+
+If `leftover_count == 0`, proceed silently to Step 1.
 
 ## Step 1: Load context
 
@@ -255,7 +267,11 @@ The user can type:
 - **n** → **Recycle**: the user has reviewed this and doesn't want to keep it. Signal depends on engagement (see below):
   - **If the user asked at least one question about this article OR requested more detail before giving `n`** → **engaged TP**: triage was right to surface it for attention, even though the user chose not to keep it. Record with `engaged: true` in the rolling_window entry.
   - **If the user went straight to `n` with no questions** → **false positive**: triage was wrong to put this in Review. Analyze WHY and update `config/reading-prefs.md` to decrease the future false-positive rate.
-  In either case, append `- [title](url)` to `Curaitor/Recycle.md` and delete the article note from `Curaitor/Review/`. NEVER move articles to `Curaitor/Ignored/` — that folder is only for triage-agent classifications.
+  In either case, append the entry via the **dedup-safe helper** (never `mcp__obsidian__write_note --mode append` directly — it has no awareness of existing entries and has produced double-appends in past sessions):
+  ```bash
+  python3 scripts/triage-write.py --add-to-recycle --url "$URL" --title "$TITLE"
+  ```
+  The helper normalizes URLs and skips the append if the URL is already present in `Curaitor/Recycle.md` or any recent monthly archive. Then delete the article note from `Curaitor/Review/`. NEVER move articles to `Curaitor/Ignored/` — that folder is only for triage-agent classifications.
 - **skip** → leave in `Curaitor/Review/`. **True positive** (the user isn't dismissing it, so triage was right to flag it).
 - **q** → stop, show session summary
 
@@ -321,7 +337,10 @@ Skip this hand-off for `t` (article moves to a Topic, not Inbox), `c`/`b`/`p` (n
 
 4. **Send**: Use `mcp__slack-mcp__send_slack_message` with the channel and final message text.
 
-5. **Recycle**: After posting, append `- [title](url)` to `Curaitor/Recycle.md`, then delete from `Curaitor/Review/`.
+5. **Recycle**: After posting, append via the dedup-safe helper, then delete from `Curaitor/Review/`:
+   ```bash
+   python3 scripts/triage-write.py --add-to-recycle --url "$URL" --title "$TITLE"
+   ```
 
 ### Bookmark format
 
@@ -351,13 +370,19 @@ bookmark_command: "curl -s -X POST 'https://api.raindrop.io/rest/v1/raindrop' -H
 
 ### Recycle format
 
-`Curaitor/Recycle.md` is a simple unordered list of dismissed article links. Append each recycled article as:
+`Curaitor/Recycle.md` is a simple unordered list of dismissed article links. Each line:
 
 ```markdown
 - [Article Title](https://url)
 ```
 
 No audit trail, no metadata — just the link for potential future reference.
+
+**Always append via the helper, never by hand:**
+```bash
+python3 scripts/triage-write.py --add-to-recycle --url "$URL" --title "$TITLE"
+```
+The helper deduplicates against the live file and recent monthly archives, preventing the double-append bug that's produced duplicate recycle lines in the past. Parse its JSON output if you need to know whether the URL was `appended` or `skipped`.
 
 The review agent should NEVER add articles to `Curaitor/Ignored/`. Only the triage agent (`/cu:triage`, `/cu:discover`) writes to `Curaitor/Ignored/`. The review agent only reads from `Curaitor/Ignored/` (for `/cu:review-ignored`) and moves articles OUT of it.
 
