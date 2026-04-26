@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Rotate Curaitor/Recycle.md into monthly archives when it grows too large.
 
-When Recycle.md exceeds the configured line threshold (default 1000, tunable
+When Recycle.md exceeds the configured line threshold (default 500, tunable
 via user-settings.yaml `recycle_rollover_threshold`), the file is moved to
 `Curaitor/Archive/Recycle-YYYY-MM.md` using today's year-month, and a fresh
 empty Recycle.md is created.
@@ -80,7 +80,7 @@ def _load_int_setting(key, default):
     return default
 
 
-def load_threshold(default=1000):
+def load_threshold(default=500):
     """Lines in Curaitor/Recycle.md that trigger auto-rotation."""
     return _load_int_setting('recycle_rollover_threshold', default)
 
@@ -164,7 +164,7 @@ def main():
     parser.add_argument('--apply', action='store_true',
                         help='Actually perform the rotation (default: dry-run)')
     parser.add_argument('--threshold', type=int,
-                        help='Line-count trigger (default: from user-settings.yaml or 1000)')
+                        help='Line-count trigger (default: from user-settings.yaml or 500)')
     args = parser.parse_args()
 
     vault = find_vault()
