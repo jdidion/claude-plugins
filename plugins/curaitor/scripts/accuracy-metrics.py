@@ -72,23 +72,78 @@ def load_stats():
 ROLLING_CAP = 50
 
 
-def trim_rolling_window(stats):
-    """Cap stats['rolling_window'] at ROLLING_CAP entries (FIFO, keep newest).
+def _entry_signal_count(entry):
+    """Number of signals represented by a rolling_window entry.
 
-    The skill docs long said "remove the oldest entries if rolling_window
-    exceeds 50" but no code enforced it — the list grew to ~474 entries at
-    one point, dragging rolling metrics into meaningless territory and
-    blocking graduation. save_stats now trims automatically on every write.
+    Two historical schemas:
+      single-signal: {date, signal, source, title}       → 1
+      batch:         {date, type, source, count: N}      → N
+    """
+    if not isinstance(entry, dict):
+        return 1
+    return int(entry.get('count', 1))
+
+
+def normalize_rolling_window(stats):
+    """Explode batch entries ({type, count}) into singles ({signal}).
+
+    After normalization every entry represents exactly one signal, so
+    trim-by-signal reduces to trim-by-length and the dashboard no longer
+    needs the dual-schema fallback.
     """
     window = stats.get('rolling_window')
     if not isinstance(window, list):
         return stats
-    if len(window) > ROLLING_CAP:
-        stats['rolling_window'] = window[-ROLLING_CAP:]
+    exploded = []
+    for entry in window:
+        if not isinstance(entry, dict):
+            exploded.append(entry)
+            continue
+        count = int(entry.get('count', 1))
+        signal = entry.get('signal') or entry.get('type') or ''
+        if count <= 1 and 'signal' in entry and 'count' not in entry and 'type' not in entry:
+            exploded.append(entry)
+            continue
+        base = {k: v for k, v in entry.items() if k not in ('count', 'type')}
+        if signal:
+            base['signal'] = signal
+        for _ in range(max(1, count)):
+            exploded.append(dict(base))
+    stats['rolling_window'] = exploded
+    return stats
+
+
+def trim_rolling_window(stats):
+    """Cap stats['rolling_window'] at ROLLING_CAP signals (not list entries).
+
+    Batch-form entries ({type, count: N}) made the old per-entry cap
+    under-count: 43 entries could carry 600+ signals and the trim would
+    no-op. Walk newest → oldest accumulating `count` (default 1); drop the
+    tail once adding the next entry would exceed ROLLING_CAP. Drop-whole-
+    entry — no splitting. Preserves entry integrity; may keep slightly
+    fewer signals than ROLLING_CAP when a straddling entry is dropped.
+
+    save_stats normalizes first, then trims, so on the single-signal
+    schema this reduces to trim-by-length.
+    """
+    window = stats.get('rolling_window')
+    if not isinstance(window, list) or not window:
+        return stats
+    total = 0
+    kept_from = len(window)
+    for i in range(len(window) - 1, -1, -1):
+        count = _entry_signal_count(window[i])
+        if total + count > ROLLING_CAP:
+            break
+        total += count
+        kept_from = i
+    if kept_from > 0:
+        stats['rolling_window'] = window[kept_from:]
     return stats
 
 
 def save_stats(stats):
+    normalize_rolling_window(stats)
     trim_rolling_window(stats)
     with open(STATS_PATH, 'w') as f:
         f.write("# Auto-updated by /cu:review and /cu:review-ignored\n")
@@ -357,21 +412,59 @@ def backfill(stats):
 
 
 def cmd_trim(args):
-    """Apply the FIFO cap to rolling_window in place.
+    """Apply the FIFO cap to rolling_window in place (signal-counted).
 
-    Safe to run repeatedly. If the window is already at or below
-    ROLLING_CAP, a no-op write preserves file mtime but emits a status.
+    Safe to run repeatedly. Reports both list-entry count and signal-total
+    before and after so callers can see a batch→single normalization that
+    re-inflated the list but left signal total unchanged.
     """
     del args  # unused; kept for dispatch-signature consistency
     stats = load_stats()
     window = stats.get('rolling_window') or []
-    before = len(window)
-    if before <= ROLLING_CAP:
-        print(json.dumps({'before': before, 'after': before, 'dropped': 0, 'status': 'already-at-cap'}))
+    before_entries = len(window)
+    before_signals = sum(_entry_signal_count(e) for e in window)
+    if before_signals <= ROLLING_CAP and before_entries <= ROLLING_CAP:
+        print(json.dumps({
+            'before_entries': before_entries,
+            'before_signals': before_signals,
+            'after_entries': before_entries,
+            'after_signals': before_signals,
+            'status': 'already-at-cap',
+        }))
         return
-    save_stats(stats)  # trims on write
-    after = len((load_stats() or {}).get('rolling_window') or [])
-    print(json.dumps({'before': before, 'after': after, 'dropped': before - after, 'status': 'trimmed'}))
+    save_stats(stats)  # normalizes + trims on write
+    after_window = (load_stats() or {}).get('rolling_window') or []
+    after_entries = len(after_window)
+    after_signals = sum(_entry_signal_count(e) for e in after_window)
+    print(json.dumps({
+        'before_entries': before_entries,
+        'before_signals': before_signals,
+        'after_entries': after_entries,
+        'after_signals': after_signals,
+        'status': 'trimmed',
+    }))
+
+
+def cmd_normalize(args):
+    """One-shot: explode batch entries into singles, then trim.
+
+    Writes through save_stats which handles both. After this runs, every
+    rolling_window entry represents exactly one signal.
+    """
+    del args
+    stats = load_stats()
+    window = stats.get('rolling_window') or []
+    before_entries = len(window)
+    before_signals = sum(_entry_signal_count(e) for e in window)
+    save_stats(stats)  # normalize + trim
+    after_window = (load_stats() or {}).get('rolling_window') or []
+    print(json.dumps({
+        'before_entries': before_entries,
+        'before_signals': before_signals,
+        'after_entries': len(after_window),
+        'after_signals': sum(_entry_signal_count(e) for e in after_window),
+        'status': 'normalized',
+    }))
 
 
 def cmd_record_signal(args):
@@ -425,7 +518,12 @@ def main():
     parser.add_argument('--backfill', action='store_true', help='Backfill stats from vault state')
     parser.add_argument('--json', action='store_true', help='Output as JSON')
     parser.add_argument('--trim', action='store_true',
-                        help='One-shot: cap rolling_window at ROLLING_CAP entries (FIFO, keep newest)')
+                        help='One-shot: cap rolling_window at ROLLING_CAP signals (FIFO, keep newest). '
+                             'Counts signals by entry.count (default 1), so batch entries are respected.')
+    parser.add_argument('--normalize', action='store_true',
+                        help='One-shot: explode batch rolling_window entries ({type, count: N}) into '
+                             'N single-signal entries ({signal}), then trim. Makes trim-by-length == '
+                             'trim-by-signal for future writes.')
     parser.add_argument('--record-signal', action='store_true',
                         help='Append a rolling_window entry + increment lifetime counters. '
                              'Auto-trims. Requires --signal and --source; --title, --engaged optional.')
@@ -441,6 +539,9 @@ def main():
 
     if args.trim:
         cmd_trim(args)
+        return
+    if args.normalize:
+        cmd_normalize(args)
         return
     if args.record_signal:
         cmd_record_signal(args)
