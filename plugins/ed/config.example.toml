@@ -2,16 +2,18 @@
 # All keys optional. Repo-local .ed.toml overrides user config on conflict.
 
 [defaults]
-editor = "hx"
+editor = "micro"
 viewer = "micro"
 
 [extensions.md]
-editor = "hx"
 viewer = "glow -p"
-viewer_live = "bash -c 'while :; do clear; glow \"$1\"; sleep 1; done' --"
+# Hot reload: when `entr` is installed (brew install entr), the plugin
+# auto-wraps the above `viewer` so it restarts on every save. No
+# viewer_live needed. Override below if you want a bespoke recipe.
+# viewer_live = "bash -c 'echo \"$1\" | entr -r glow -p \"$1\"' --"
 
 [extensions.pdf]
-viewer = "zathura"
+viewer = "cmux browser open"  # self-watching, never auto-wrapped
 
 [extensions.csv]
 viewer = "csvlens"
@@ -20,4 +22,4 @@ viewer = "csvlens"
 viewer = "jq -C . | less -R"
 
 [extensions.html]
-viewer = "cmux browser open"
+viewer = "cmux browser open"  # self-watching, never auto-wrapped

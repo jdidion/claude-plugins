@@ -1,7 +1,7 @@
 {
   "name": "ed",
-  "version": "0.4.0",
-  "description": "Edit or view a file in an adjacent cmux surface. /ed:edit opens the editor (with edit flag if applicable) and a hot-reload viewer pane when a viewer is configured for the file type. /ed:view opens a single viewer pane, falling back to the editor in read-only mode. Per-extension config at ~/.config/ed/config.toml.",
+  "version": "0.5.0",
+  "description": "Edit or view a file in an adjacent cmux surface. /ed:edit opens the editor plus a hot-reload viewer pane (entr-wrapped automatically) when a viewer is configured for the file type. /ed:view opens a single viewer pane with editor-read-only fallback. Per-extension config at ~/.config/ed/config.toml.",
   "author": { "name": "John Didion" },
   "license": "MIT",
   "keywords": ["editor", "viewer", "hx", "helix", "micro", "cmux", "markdown", "preview"]

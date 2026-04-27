@@ -54,17 +54,35 @@ command -v "$BIN" >/dev/null || { echo "editor not on PATH: $BIN"; exit 1; }
 Ask the resolver: does this file's extension have an **explicitly configured** viewer? Default viewers / env fallbacks don't count — we only open a viewer pane if one is configured for this file type.
 
 ```bash
-VIEWER_CMD=$(python3 "$RESOLVE" viewer-configured "$RESOLVED_PATH" --live)
+VIEWER_CMD=$(python3 "$RESOLVE" viewer-configured "$RESOLVED_PATH" --live --provenance 2>/tmp/ed-edit-viewer-prov.$$)
+VIEWER_PROV=$(cat /tmp/ed-edit-viewer-prov.$$ 2>/dev/null); rm -f /tmp/ed-edit-viewer-prov.$$
 ```
 
 - If `$VIEWER_CMD` is empty → open only the editor (skip steps 5-6). Print `No viewer configured for .<ext>; opening editor only.`
-- If non-empty → run `$VIEWER_CMD` in the viewer pane. Because of `--live`, it's the `viewer_live` variant if configured; otherwise the regular `viewer` entry.
+- If non-empty → run `$VIEWER_CMD` in the viewer pane. Because of `--live`, it's:
+  - the `viewer_live` config entry if set; else
+  - the regular `viewer` entry, **auto-wrapped with `entr`** if `entr` is installed and the viewer doesn't self-watch; else
+  - the regular `viewer` entry as-is (with a one-line hint on stderr: `tip: install entr for hot-reload`).
 
-Validate the viewer binary is on PATH:
+The `$VIEWER_PROV` string from `--provenance` encodes which branch fired; it includes substrings like `synthesized viewer_live`, `passthrough (self-watches)`, or `passthrough (entr not installed)`. Use that to decide whether to emit the install hint:
+
+```bash
+if [ -n "$VIEWER_CMD" ] && echo "$VIEWER_PROV" | grep -q "entr not installed"; then
+    echo "tip: install entr for hot-reload (brew install entr)"
+fi
+```
+
+**Binary validation**: when the viewer was auto-wrapped by `entr`, the outer binary is `bash`, and the actual viewer binary is nested in the wrapper. Extract and validate the real target:
 
 ```bash
 if [ -n "$VIEWER_CMD" ]; then
-    VBIN=$(echo "$VIEWER_CMD" | awk '{print $1}')
+    # If the resolver wrapped the command with `bash -c '... | entr -r <viewer> "$1"' --`,
+    # pull out <viewer>'s first token. Otherwise, just use the first token.
+    if echo "$VIEWER_CMD" | grep -q 'entr -r '; then
+        VBIN=$(echo "$VIEWER_CMD" | sed -n 's/.*entr -r \([^"[:space:]]*\).*/\1/p')
+    else
+        VBIN=$(echo "$VIEWER_CMD" | awk '{print $1}')
+    fi
     if ! command -v "$VBIN" >/dev/null; then
         echo "warning: viewer not on PATH: $VBIN — skipping viewer pane"
         VIEWER_CMD=""
