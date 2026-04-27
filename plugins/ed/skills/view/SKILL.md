@@ -39,6 +39,18 @@ When `--live` is set and the resolver returns the regular `viewer` (not an expli
 if echo "$PROVENANCE" | grep -q "entr not installed"; then
     echo "tip: install entr for hot-reload (brew install entr)"
 fi
+
+# TUI-flag stripping note (e.g. glow -p stripped so entr -r can kill cleanly).
+if echo "$PROVENANCE" | grep -q "stripped TUI flags"; then
+    STRIPPED=$(echo "$PROVENANCE" | sed -n 's/.*stripped TUI flags: \([^;]*\).*/\1/p')
+    echo "note: stripped TUI flags for hot-reload:$STRIPPED (drop --live to keep them)"
+fi
+
+# Always-alt-screen viewer warning (e.g. frogmouth — entr restart may not work).
+if echo "$PROVENANCE" | grep -q "WARN:"; then
+    WARN=$(echo "$PROVENANCE" | sed -n 's/.*WARN: \(.*\)/\1/p')
+    echo "warning: $WARN — consider switching viewer or using --no-autowrap"
+fi
 ```
 
 Users who want to skip auto-wrap (e.g. to debug) can pass `--no-autowrap` as an `$EXTRA_ARGS` equivalent — add `--no-autowrap` to the resolver call: `python3 "$RESOLVE" view "$RESOLVED_PATH" --live --no-autowrap`.

@@ -86,6 +86,28 @@ SELF_WATCHING_VIEWERS: frozenset[str] = frozenset({
 })
 
 
+# Flags on specific viewers that switch them into an alt-screen / pager
+# TUI mode. entr's SIGTERM leaves those TUI processes in stopped (T)
+# state instead of killing them cleanly, so hot-reload breaks silently.
+# We strip these flags from the *synthesized* viewer_live command; the
+# non-live path (/ed:view without --live) keeps them as configured.
+TUI_FLAGS_TO_STRIP: dict[str, frozenset[str]] = {
+    "glow":  frozenset({"-p", "--pager"}),
+    "bat":   frozenset({"--paging=always"}),
+}
+
+
+# Viewers that stay in alt-screen mode no matter what flags you pass.
+# entr -r can't restart them cleanly. Emit a warning when autowrap is
+# about to apply to one of these; users can opt out with --no-autowrap
+# or an explicit viewer_live.
+ALT_SCREEN_VIEWERS: frozenset[str] = frozenset({
+    "frogmouth",    # Textual app; doesn't exit cleanly on SIGTERM.
+    "mdless",       # Wraps less internally.
+    "less",         # Always alt-screen; user probably didn't mean this as a viewer.
+})
+
+
 # Built-in per-editor metadata. User/repo config can override per-key.
 BUILTIN_EDITORS: dict[str, dict[str, str]] = {
     "hx":       {"edit_flag": "",              "readonly_flag": ""},
@@ -194,6 +216,34 @@ def _wrap_with_entr(viewer_cmd: str) -> str:
     return f"bash -c {shlex.quote(inner)} --"
 
 
+def _strip_tui_flags(viewer_cmd: str) -> tuple[str, list[str]]:
+    """Strip known alt-screen/pager flags for the entr-wrapped path.
+
+    Returns (stripped_cmd, removed_flags). Only applies to viewers listed
+    in TUI_FLAGS_TO_STRIP — unknown binaries pass through unchanged.
+
+    Rationale: glow -p enters Bubble Tea alt-screen mode; SIGTERM from
+    entr leaves it in stopped (T) state, breaking hot-reload. Plain glow
+    prints to stdout and exits, so entr can restart it cleanly. The
+    non-wrapped /ed:view path still keeps the flag for interactive use.
+    """
+    tokens = shlex.split(viewer_cmd)
+    if not tokens:
+        return viewer_cmd, []
+    bin_name = os.path.basename(tokens[0])
+    strippable = TUI_FLAGS_TO_STRIP.get(bin_name)
+    if not strippable:
+        return viewer_cmd, []
+    kept = [tokens[0]]
+    removed = []
+    for tok in tokens[1:]:
+        if tok in strippable or (tok.startswith("--") and tok.split("=", 1)[0] + "=" in strippable):
+            removed.append(tok)
+        else:
+            kept.append(tok)
+    return shlex.join(kept), removed
+
+
 def _maybe_autowrap_live(viewer_cmd: str) -> tuple[str, str]:
     """Auto-wrap viewer_cmd with entr for hot-reload if possible.
 
@@ -201,13 +251,26 @@ def _maybe_autowrap_live(viewer_cmd: str) -> tuple[str, str]:
     Skip rules:
       - The viewer's binary is in SELF_WATCHING_VIEWERS (already handles reload).
       - entr is not on PATH (caller should emit a stderr hint).
+
+    Before wrapping, strip TUI/alt-screen flags that break entr -r (e.g.
+    glow -p) and emit a warning when the viewer is in ALT_SCREEN_VIEWERS
+    (unconditionally alt-screen; entr won't restart cleanly).
     """
     bin_name = _viewer_bin(viewer_cmd)
     if bin_name in SELF_WATCHING_VIEWERS:
         return viewer_cmd, f"passthrough ({bin_name} self-watches)"
     if not _entr_available():
         return viewer_cmd, "passthrough (entr not installed — tip: brew install entr)"
-    return _wrap_with_entr(viewer_cmd), f"synthesized viewer_live (entr -r {bin_name})"
+
+    stripped, removed = _strip_tui_flags(viewer_cmd)
+    note_parts = [f"synthesized viewer_live (entr -r {bin_name})"]
+    if removed:
+        note_parts.append(f"stripped TUI flags: {' '.join(removed)}")
+    if bin_name in ALT_SCREEN_VIEWERS:
+        note_parts.append(
+            f"WARN: {bin_name} is always alt-screen; entr restart may not work cleanly"
+        )
+    return _wrap_with_entr(stripped), "; ".join(note_parts)
 
 
 def resolve_view(file_path: pathlib.Path, live: bool, config: dict) -> tuple[str, str]:
