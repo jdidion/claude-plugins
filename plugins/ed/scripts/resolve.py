@@ -60,6 +60,7 @@ import argparse
 import os
 import pathlib
 import shlex
+import shutil
 import subprocess
 import sys
 
@@ -71,6 +72,18 @@ except ModuleNotFoundError:
         import tomli as tomllib  # type: ignore
     except ModuleNotFoundError:
         pass
+
+
+# Viewers that self-watch or have their own reload mechanism. The
+# entr auto-wrapper skips these — wrapping would either fight their
+# built-in watcher or never work (opening an external app).
+SELF_WATCHING_VIEWERS: frozenset[str] = frozenset({
+    "code",          # VS Code watches the filesystem itself.
+    "subl",          # Sublime Text same.
+    "cmux",          # `cmux browser open ...` — cmux handles its own lifecycle.
+    "open",          # macOS `open` hands off to the registered app.
+    "xdg-open",      # Linux equivalent; same reasoning.
+})
 
 
 # Built-in per-editor metadata. User/repo config can override per-key.
@@ -153,6 +166,50 @@ def resolve_edit(file_path: pathlib.Path, override: str | None, config: dict) ->
     return "vi", "fallback (vi)"
 
 
+def _viewer_bin(viewer_cmd: str) -> str:
+    tokens = shlex.split(viewer_cmd)
+    if not tokens:
+        return ""
+    return os.path.basename(tokens[0])
+
+
+def _entr_available() -> bool:
+    return shutil.which("entr") is not None
+
+
+def _wrap_with_entr(viewer_cmd: str) -> str:
+    """Wrap a non-watching viewer so entr restarts it on file change.
+
+    Uses a bash -c wrapper where $1 is the file path supplied by the caller:
+        bash -c 'echo "$1" | entr -r <viewer-cmd> "$1"' --
+
+    Returns a string the skill can shell in as:
+        <wrapper> <file-path>
+    The trailing `--` is the bash argv[0]; $1 takes the path. This keeps
+    quoting correct even for paths with spaces.
+    """
+    # shlex.quote the inner command string so any single quotes inside
+    # viewer_cmd survive the `bash -c '...'` outer quoting.
+    inner = f'echo "$1" | entr -r {viewer_cmd} "$1"'
+    return f"bash -c {shlex.quote(inner)} --"
+
+
+def _maybe_autowrap_live(viewer_cmd: str) -> tuple[str, str]:
+    """Auto-wrap viewer_cmd with entr for hot-reload if possible.
+
+    Returns (wrapped_or_passthrough_cmd, synthesis_note).
+    Skip rules:
+      - The viewer's binary is in SELF_WATCHING_VIEWERS (already handles reload).
+      - entr is not on PATH (caller should emit a stderr hint).
+    """
+    bin_name = _viewer_bin(viewer_cmd)
+    if bin_name in SELF_WATCHING_VIEWERS:
+        return viewer_cmd, f"passthrough ({bin_name} self-watches)"
+    if not _entr_available():
+        return viewer_cmd, "passthrough (entr not installed — tip: brew install entr)"
+    return _wrap_with_entr(viewer_cmd), f"synthesized viewer_live (entr -r {bin_name})"
+
+
 def resolve_view(file_path: pathlib.Path, live: bool, config: dict) -> tuple[str, str]:
     ext = file_path.suffix.lstrip(".").lower()
     ext_cfg = config.get("extensions", {}).get(ext, {})
@@ -160,14 +217,27 @@ def resolve_view(file_path: pathlib.Path, live: bool, config: dict) -> tuple[str
     if live and ext_cfg.get("viewer_live"):
         return ext_cfg["viewer_live"], f"config extensions.{ext}.viewer_live"
     if ext_cfg.get("viewer"):
-        return ext_cfg["viewer"], f"config extensions.{ext}.viewer"
+        base = ext_cfg["viewer"]
+        prov = f"config extensions.{ext}.viewer"
+        if live:
+            wrapped, note = _maybe_autowrap_live(base)
+            return wrapped, f"{prov} + {note}"
+        return base, prov
     default_cmd = config.get("defaults", {}).get("viewer")
     if default_cmd:
-        return default_cmd, "config defaults.viewer"
+        prov = "config defaults.viewer"
+        if live:
+            wrapped, note = _maybe_autowrap_live(default_cmd)
+            return wrapped, f"{prov} + {note}"
+        return default_cmd, prov
     for env in ("VIEWER", "ED_DEFAULT_VIEWER"):
         val = os.environ.get(env)
         if val:
-            return val, f"${env}"
+            prov = f"${env}"
+            if live:
+                wrapped, note = _maybe_autowrap_live(val)
+                return wrapped, f"{prov} + {note}"
+            return val, prov
     return "less", "fallback (less)"
 
 
@@ -178,7 +248,12 @@ def resolve_viewer_configured(file_path: pathlib.Path, live: bool, config: dict)
     if live and ext_cfg.get("viewer_live"):
         return ext_cfg["viewer_live"], f"config extensions.{ext}.viewer_live"
     if ext_cfg.get("viewer"):
-        return ext_cfg["viewer"], f"config extensions.{ext}.viewer"
+        base = ext_cfg["viewer"]
+        prov = f"config extensions.{ext}.viewer"
+        if live:
+            wrapped, note = _maybe_autowrap_live(base)
+            return wrapped, f"{prov} + {note}"
+        return base, prov
     return "", f"no viewer configured for .{ext}"
 
 
@@ -212,10 +287,14 @@ def main() -> int:
     pv = sub.add_parser("view")
     pv.add_argument("path")
     pv.add_argument("--live", action="store_true")
+    pv.add_argument("--no-autowrap", action="store_true",
+                    help="Disable entr auto-wrap when --live is set.")
 
     pvc = sub.add_parser("viewer-configured")
     pvc.add_argument("path")
     pvc.add_argument("--live", action="store_true")
+    pvc.add_argument("--no-autowrap", action="store_true",
+                     help="Disable entr auto-wrap when --live is set.")
 
     pef = sub.add_parser("edit-flag")
     pef.add_argument("editor_cmd")
@@ -223,7 +302,10 @@ def main() -> int:
     prf = sub.add_parser("readonly-flag")
     prf.add_argument("editor_cmd")
 
-    for sp in (pe, pv, pvc, pef, prf):
+    pea = sub.add_parser("entr-available",
+                         help="Exit 0 and print 'yes' if entr is on PATH, else print 'no' (still exit 0).")
+
+    for sp in (pe, pv, pvc, pef, prf, pea):
         sp.add_argument("--provenance", action="store_true",
                         help="Print a second line to stderr naming the source.")
 
@@ -234,10 +316,19 @@ def main() -> int:
         config = load_config(file_path)
         if args.role == "edit":
             cmd, prov = resolve_edit(file_path, args.override, config)
-        elif args.role == "view":
-            cmd, prov = resolve_view(file_path, args.live, config)
         else:
-            cmd, prov = resolve_viewer_configured(file_path, args.live, config)
+            effective_live = args.live and not getattr(args, "no_autowrap", False)
+            # Sub-note: the autowrap path only kicks in when live is True *and* no
+            # explicit viewer_live is configured. --no-autowrap forces live=False
+            # for the resolver so the regular viewer is returned unwrapped.
+            if args.role == "view":
+                cmd, prov = resolve_view(file_path, effective_live, config)
+            else:
+                cmd, prov = resolve_viewer_configured(file_path, effective_live, config)
+    elif args.role == "entr-available":
+        available = _entr_available()
+        cmd = "yes" if available else "no"
+        prov = "entr on PATH" if available else "entr not installed (brew install entr)"
     else:
         # edit-flag / readonly-flag — no file path, use cwd for repo-config discovery.
         config = load_config(pathlib.Path.cwd())

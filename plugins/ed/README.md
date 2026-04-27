@@ -70,12 +70,13 @@ Two TOML sources are merged (repo-local wins on conflict):
 
 ```toml
 [defaults]
-editor = "hx"
+editor = "micro"
 viewer = "micro"
 
 [extensions.md]
 viewer = "glow -p"
-viewer_live = "bash -c 'while :; do clear; glow \"$1\"; sleep 1; done' --"
+# No viewer_live needed: when `entr` is installed, the plugin auto-wraps
+# `glow -p` with `entr -r` for hot-reload. See "Hot reload" below.
 
 [extensions.pdf]
 viewer = "cmux browser open"
@@ -91,6 +92,37 @@ readonly_flag = "-R"
 
 [editors.micro]
 readonly_flag = "-readonly true"
+```
+
+### Hot reload (`--live`, `/ed:edit` viewer pane)
+
+The live/hot-reload path is driven by a single question: is an explicit `viewer_live` set for the extension?
+
+1. **If yes** → run that command as-is. Use this for viewers that require a bespoke reload recipe or a command other than the one `viewer` resolves to.
+2. **If no** and `entr` is installed on PATH → the plugin auto-wraps the regular `viewer` as:
+   ```
+   bash -c 'echo "$1" | entr -r <viewer-cmd> "$1"' --
+   ```
+   `entr -r` restarts the viewer whenever the file changes. `entr` is BSD-licensed; `brew install entr` on macOS, `apt install entr` on Debian/Ubuntu, `yum install entr` on Fedora/RHEL.
+3. **If `entr` isn't installed** → the regular `viewer` runs once, and the skill prints a one-line stderr hint: `tip: install entr for hot-reload (brew install entr)`.
+4. **Self-watching viewers are never wrapped.** Built-in no-wrap list: `code`, `subl`, `cmux`, `open`, `xdg-open` — they handle reload themselves or hand off to an external app.
+
+Pass `--no-autowrap` to the resolver to skip auto-wrap even when `entr` is installed (useful for debugging).
+
+#### Manual `viewer_live` recipes
+
+Still useful when the auto-wrap isn't what you want (e.g. `entr -c` instead of `-r`, or piping through a renderer):
+
+```toml
+[extensions.tex]
+viewer_live = "bash -c 'echo \"$1\" | entr -r tectonic --preview \"$1\"' --"
+
+[extensions.puml]
+viewer_live = "bash -c 'echo \"$1\" | entr -r plantuml -pipe \"$1\"' --"
+
+# Polling fallback for systems without entr:
+[extensions.md]
+viewer_live = "bash -c 'while :; do clear; glow \"$1\"; sleep 1; done' --"
 ```
 
 ### Resolution ladders

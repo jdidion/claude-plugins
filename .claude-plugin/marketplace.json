@@ -48,8 +48,8 @@
     {
       "name": "ed",
       "source": "./plugins/ed",
-      "description": "Edit or view a file in an adjacent cmux surface. /ed:edit opens the editor + a hot-reload viewer pane when configured for the file type; /ed:view opens a single viewer pane with editor-read-only fallback. Per-extension config at ~/.config/ed/config.toml.",
-      "version": "0.4.0",
+      "description": "Edit or view a file in an adjacent cmux surface. /ed:edit opens the editor + a hot-reload viewer pane (entr-wrapped automatically) when a viewer is configured for the file type. /ed:view opens a single viewer pane with editor-read-only fallback. Per-extension config at ~/.config/ed/config.toml.",
+      "version": "0.5.0",
       "author": { "name": "John Didion" },
       "license": "MIT",
       "keywords": ["editor", "viewer", "hx", "helix", "micro", "cmux", "markdown", "preview"]

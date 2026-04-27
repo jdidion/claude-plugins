@@ -33,6 +33,16 @@ PROVENANCE=$(cat /tmp/ed-view-prov.$$ 2>/dev/null); rm -f /tmp/ed-view-prov.$$
 
 Ladder inside `resolve.py`: `extensions.<ext>.viewer_live` (if `--live`) → `extensions.<ext>.viewer` → `defaults.viewer` → `$VIEWER` → `$ED_DEFAULT_VIEWER` → `less`.
 
+When `--live` is set and the resolver returns the regular `viewer` (not an explicit `viewer_live`), it **auto-wraps with `entr`** for hot-reload if `entr` is installed and the viewer doesn't self-watch. Self-watching viewers (`code`, `subl`, `cmux`, `open`, `xdg-open`) pass through unwrapped. Missing `entr` also passes through unwrapped and sets a provenance substring `entr not installed` so the skill can emit an install hint:
+
+```bash
+if echo "$PROVENANCE" | grep -q "entr not installed"; then
+    echo "tip: install entr for hot-reload (brew install entr)"
+fi
+```
+
+Users who want to skip auto-wrap (e.g. to debug) can pass `--no-autowrap` as an `$EXTRA_ARGS` equivalent — add `--no-autowrap` to the resolver call: `python3 "$RESOLVE" view "$RESOLVED_PATH" --live --no-autowrap`.
+
 If the resolver fell all the way through to the `less` fallback AND no explicit viewer is configured for this file type, use the editor in read-only mode instead — so `/ed:view script.py` opens your editor in view-only mode rather than paging Python source through `less`:
 
 ```bash
@@ -51,10 +61,14 @@ if [ "$PROVENANCE" = "fallback (less)" ]; then
 fi
 ```
 
-Validate the binary is on PATH:
+Validate the binary is on PATH. When the viewer is entr-wrapped, the outer binary is `bash` and the real target is embedded in the wrapper — extract and check that instead:
 
 ```bash
-BIN=$(echo "$VIEWER_CMD" | awk '{print $1}')
+if echo "$VIEWER_CMD" | grep -q 'entr -r '; then
+    BIN=$(echo "$VIEWER_CMD" | sed -n 's/.*entr -r \([^"[:space:]]*\).*/\1/p')
+else
+    BIN=$(echo "$VIEWER_CMD" | awk '{print $1}')
+fi
 command -v "$BIN" >/dev/null || { echo "not on PATH: $BIN"; exit 1; }
 ```
 
