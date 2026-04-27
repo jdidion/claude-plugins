@@ -492,16 +492,23 @@ For **true positives**, only log if the pattern is genuinely new and informative
 
 At the end of the session, update `config/accuracy-stats.yaml`:
 
-1. **Accumulate signals**: For each article reviewed this session, add to `lifetime.{source}.{signal}` (TP or FP) and append to `rolling_window` (FIFO, max 50 entries). For `engaged TP` signals (user asked questions before recycling), also increment `lifetime.{source}.engaged_tp` and set `engaged: true` on the rolling-window entry:
-   ```yaml
-   # Kept verdict (y/d/t/c/b/r/p/skip)
-   {date: "YYYY-MM-DD", source: "instapaper", signal: "tp", title: "Article Title"}
-   # Recycled after engagement (user asked questions, then gave n)
-   {date: "YYYY-MM-DD", source: "rss", signal: "tp", engaged: true, title: "Article Title"}
-   # Recycled without engagement (pure FP)
-   {date: "YYYY-MM-DD", source: "rss", signal: "fp", title: "Article Title"}
+1. **Accumulate signals**: For each article reviewed this session, call the helper — do NOT hand-edit `config/accuracy-stats.yaml`:
+
+   ```bash
+   # Kept verdict (y/d/t/c/b/r/p/skip) → TP
+   python3 scripts/accuracy-metrics.py --record-signal \
+     --signal tp --source instapaper --title "Article Title"
+
+   # Recycled after engagement (questions asked, then n) → engaged TP
+   python3 scripts/accuracy-metrics.py --record-signal \
+     --signal tp --source rss --engaged --title "Article Title"
+
+   # Recycled without engagement → FP
+   python3 scripts/accuracy-metrics.py --record-signal \
+     --signal fp --source rss --title "Article Title"
    ```
-   If rolling_window exceeds 50, remove the oldest entries.
+
+   The helper appends a single-signal entry, increments the lifetime counter (and `engaged_tp` when applicable), and auto-trims the rolling window to ROLLING_CAP signals. **Never** write batch-form entries (`{type, count: N}`) by hand — they fragment the schema and break trim-by-signal-count. If a past session accumulated batch entries, run `python3 scripts/accuracy-metrics.py --normalize` once to explode them into singles.
 
 2. **Check graduation**: Run `python3 scripts/accuracy-metrics.py --json` to check if graduation criteria are met. If so, increment `autonomy_level` and announce:
    ```

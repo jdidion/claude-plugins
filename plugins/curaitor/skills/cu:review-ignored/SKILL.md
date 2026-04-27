@@ -109,10 +109,34 @@ For **true negatives** (confirmed ignores), optionally reinforce correct pattern
 ```
 
 ### 4b. Update accuracy stats
-Update `config/accuracy-stats.yaml`:
-1. Add TN and FN signals to `lifetime.{source}` counts and `rolling_window` (FIFO, max 50)
-2. Increment `review_ignored_passes` by 1
-3. Set `last_review_ignored` to today's date
+For each signal produced in this pass, call the helper — do NOT hand-edit `config/accuracy-stats.yaml`:
+
+```bash
+# Confirmed-ignored article → TN
+python3 scripts/accuracy-metrics.py --record-signal \
+  --signal tn --source rss --title "Article Title"
+
+# Rescued article (wrongly ignored) → FN
+python3 scripts/accuracy-metrics.py --record-signal \
+  --signal fn --source rss --title "Article Title"
+```
+
+The helper appends single-signal entries, increments lifetime counters, and auto-trims the rolling window to ROLLING_CAP signals. **Never** write batch-form entries (`{type, count: N}`) by hand.
+
+Then increment `review_ignored_passes` and set `last_review_ignored` via a small Python one-liner or manual edit (these are not per-signal):
+
+```bash
+python3 -c "
+import yaml
+from datetime import date
+with open('config/accuracy-stats.yaml') as f: d = yaml.safe_load(f)
+d['review_ignored_passes'] = d.get('review_ignored_passes', 0) + 1
+d['last_review_ignored'] = date.today().isoformat()
+with open('config/accuracy-stats.yaml', 'w') as f:
+    f.write('# Auto-updated by /cu:review and /cu:review-ignored\n# Do not edit manually — use scripts/accuracy-metrics.py to view\n\n')
+    yaml.dump(d, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+"
+```
 
 ### 4c. Check graduation and demotion
 - **Graduation**: Check if rolling precision/recall + pass count meet next level criteria. If so, increment `autonomy_level` and announce.
