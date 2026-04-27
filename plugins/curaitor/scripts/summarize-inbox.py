@@ -383,7 +383,7 @@ def cmd_one_url(args):
     notes = iter_inbox_notes(vault)
     target_norm = normalize_url(args.url)
     for note in notes:
-        fm, body = parse_frontmatter(note.read_text(encoding='utf-8'))
+        fm, _ = parse_frontmatter(note.read_text(encoding='utf-8'))
         if normalize_url(fm.get('url', '')) == target_norm:
             status, info = summarize_note_file(note, cfg, force=args.regenerate)
             print(json.dumps({'url': args.url, 'status': status, 'info': info}))
@@ -427,6 +427,7 @@ def cmd_drain(args):
 
 
 def cmd_list(args):
+    del args  # unused; kept for dispatch-signature consistency
     if not CACHE_DIR.is_dir():
         print('[]')
         return
