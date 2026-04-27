@@ -70,6 +70,18 @@ The `$VIEWER_PROV` string from `--provenance` encodes which branch fired; it inc
 if [ -n "$VIEWER_CMD" ] && echo "$VIEWER_PROV" | grep -q "entr not installed"; then
     echo "tip: install entr for hot-reload (brew install entr)"
 fi
+
+# TUI-flag stripping note (e.g. glow -p was stripped so entr -r can kill cleanly).
+if echo "$VIEWER_PROV" | grep -q "stripped TUI flags"; then
+    STRIPPED=$(echo "$VIEWER_PROV" | sed -n 's/.*stripped TUI flags: \([^;]*\).*/\1/p')
+    echo "note: stripped TUI flags for hot-reload:$STRIPPED (non-live /ed:view still uses them)"
+fi
+
+# Always-alt-screen viewer warning (e.g. frogmouth — entr restart may not work).
+if echo "$VIEWER_PROV" | grep -q "WARN:"; then
+    WARN=$(echo "$VIEWER_PROV" | sed -n 's/.*WARN: \(.*\)/\1/p')
+    echo "warning: $WARN — consider switching viewer or using --no-autowrap"
+fi
 ```
 
 **Binary validation**: when the viewer was auto-wrapped by `entr`, the outer binary is `bash`, and the actual viewer binary is nested in the wrapper. Extract and validate the real target:
