@@ -1,58 +1,66 @@
 ---
 name: view
-description: Open a file in a viewer in an adjacent cmux surface. Default viewer comes from config/env (ladder below), falling back to the editor if no viewer is configured. Use when the user asks to view, preview, or read a file. --live picks the live-reload viewer variant when one is configured. Other trailing flags are passed through to the viewer.
+description: Open a file in a viewer in an adjacent cmux surface. Uses the viewer configured for the file's extension, or the default viewer, or falls back to the editor in read-only mode. Use when the user asks to view, preview, or read a file. --live picks the live-reload viewer variant when one is configured. Other trailing flags are passed through to the viewer.
 ---
 
-# /ed:view — Open a file in a viewer in an adjacent cmux surface
+# /ed:view — View a file in an adjacent cmux surface
 
-Opens a file in a cmux terminal surface using the viewer configured for that file's extension. If no viewer applies, falls back to the editor. Orientation-aware splits.
+Opens a file in a single cmux terminal surface using the configured viewer. When no viewer is configured anywhere, falls back to the editor in read-only mode (if the editor has one).
 
 ## Arguments
 
-`$ARGUMENTS` — `[path] [--live] [--watch] [<other viewer flags>]`
+`$ARGUMENTS` — `[path] [--live] [<passthrough-flags>]`
 
-- **`path`** — file to view. If omitted, resolve to the most recently mentioned local file path from the current conversation.
-- **`--live`** — use the `viewer_live` variant from config for this extension, if defined. Otherwise it's passed through as a regular flag to the viewer command.
-- **`--watch`** and other flags — passed through verbatim to the viewer after the path.
+- `path` — file to view. If omitted, resolve to the most recently mentioned local file path in the conversation.
+- `--live` — prefer the `viewer_live` variant from config for this extension. Always passed through to the resolved command too (harmless if the viewer doesn't recognize it).
+- Other tokens — passed through verbatim after the path.
 
 ## Step 1: Parse arguments and resolve path
 
-1. Split `$ARGUMENTS`. Classify tokens as flags (`--foo`) or path.
-2. Set `LIVE=1` if `--live` appears. Leave the flag in `$EXTRA_ARGS` anyway; passing `--live` through is harmless if the viewer doesn't recognize it, and lets users chain it into watch-mode viewers that expect it.
-3. If no path provided, scan the conversation (most recent first) for a local file that exists.
+1. Tokenize `$ARGUMENTS`. Classify as flag or path.
+2. Set `LIVE=1` if `--live` is present. Keep it in `$EXTRA_ARGS`.
+3. If no path given, scan the conversation (most recent first) for a local file that exists on disk and isn't a URL.
 4. If nothing resolves, ask the user. Do not guess.
 
-Report the resolved path, viewer command, and extras in one line.
-
-## Step 2: Resolve the viewer command
+## Step 2: Resolve the viewer command (or fall back to editor in read-only mode)
 
 ```bash
-RESOLVED=$("$CLAUDE_PLUGIN_ROOT/scripts/resolve.py" view "$RESOLVED_PATH" ${LIVE:+--live} --provenance 2>/tmp/ed-view-prov.$$)
+RESOLVE="$CLAUDE_PLUGIN_ROOT/scripts/resolve.py"
+
+VIEWER_CMD=$(python3 "$RESOLVE" view "$RESOLVED_PATH" ${LIVE:+--live} --provenance 2>/tmp/ed-view-prov.$$)
 PROVENANCE=$(cat /tmp/ed-view-prov.$$ 2>/dev/null); rm -f /tmp/ed-view-prov.$$
 ```
 
-`$RESOLVED` is the command; `$PROVENANCE` names where it came from (config key, env var, or `fallback (less)`).
+Ladder inside `resolve.py`: `extensions.<ext>.viewer_live` (if `--live`) → `extensions.<ext>.viewer` → `defaults.viewer` → `$VIEWER` → `$ED_DEFAULT_VIEWER` → `less`.
 
-Resolution ladder (inside `resolve.py`): `extensions.<ext>.viewer_live` (if `--live`) → `extensions.<ext>.viewer` → `defaults.viewer` → `$VIEWER` → `$ED_DEFAULT_VIEWER` → `less`.
-
-**Editor fallback**: if the resolved viewer is the bare `less` fallback AND the file's extension doesn't have any viewer-shaped config/env set, prefer the user's editor instead (so `/ed:view script.py` opens `$EDITOR script.py` rather than paging Python source):
+If the resolver fell all the way through to the `less` fallback AND no explicit viewer is configured for this file type, use the editor in read-only mode instead — so `/ed:view script.py` opens your editor in view-only mode rather than paging Python source through `less`:
 
 ```bash
 if [ "$PROVENANCE" = "fallback (less)" ]; then
-    EDITOR_CMD=$("$CLAUDE_PLUGIN_ROOT/scripts/resolve.py" edit "$RESOLVED_PATH")
-    VIEWER_CMD="$EDITOR_CMD"
-    PROVENANCE="editor fallback"
-else
-    VIEWER_CMD="$RESOLVED"
+    EDITOR_CMD=$(python3 "$RESOLVE" edit "$RESOLVED_PATH")
+    RO_FLAG=$(python3 "$RESOLVE" readonly-flag "$EDITOR_CMD")
+    if [ -n "$RO_FLAG" ]; then
+        VIEWER_CMD="$EDITOR_CMD $RO_FLAG"
+        PROVENANCE="editor read-only fallback"
+    else
+        # Editor has no read-only flag — open it normally and warn the user.
+        VIEWER_CMD="$EDITOR_CMD"
+        PROVENANCE="editor fallback (no read-only mode — file is writable)"
+        echo "warning: editor has no known read-only flag; opened in normal edit mode"
+    fi
 fi
-
-BIN=$(echo "$VIEWER_CMD" | awk '{print $1}')
-command -v "$BIN" >/dev/null || { echo "viewer not on PATH: $BIN"; exit 1; }
 ```
 
-## Step 3: Find or create the viewer surface
+Validate the binary is on PATH:
 
-Use the same workspace-surface helper and orientation rule as `/ed:edit`:
+```bash
+BIN=$(echo "$VIEWER_CMD" | awk '{print $1}')
+command -v "$BIN" >/dev/null || { echo "not on PATH: $BIN"; exit 1; }
+```
+
+## Step 3: Create the viewer surface
+
+Single pane; splits off Claude directly (no editor pane in `/ed:view`).
 
 ```bash
 ws_surfaces() {
@@ -74,9 +82,9 @@ AFTER=$(ws_surfaces)
 VIEWER_SURFACE=$(comm -13 <(echo "$BEFORE") <(echo "$AFTER") | head -1)
 ```
 
-**Critical**: use `cmux new-split <dir> --surface <ref>`, not `cmux new-pane` — `new-pane` ignores `--surface` and splits the focused pane.
+**Critical**: `cmux new-split <dir> --surface <ref>`, not `cmux new-pane`.
 
-## Step 4: Launch the viewer
+## Step 4: Launch
 
 ```bash
 CMD="$VIEWER_CMD '$RESOLVED_PATH'"
@@ -92,11 +100,12 @@ cmux rename-tab --surface "$VIEWER_SURFACE" "view: $(basename "$RESOLVED_PATH")"
 One line:
 
 ```
-Viewing <basename> via <viewer-bin> (<provenance>, <extras if any>) on <surface-ref>
+Viewing <basename> via <bin> (<provenance>, <extras if any>) on <surface-ref>
 ```
 
 ## Rules
 
-- Do not auto-focus the viewer surface.
-- Use `/ed:edit` for editing. `/ed:view` is read-only by convention; whether the resolved binary is actually read-only is up to the user's config.
-- `--live` only affects viewer resolution when a `viewer_live` entry exists; otherwise it's a passthrough flag to the viewer.
+- Single pane only. If you want editor + viewer side-by-side, use `/ed:edit`.
+- The read-only fallback kicks in only when the resolver hit the `less` end of the ladder. If `defaults.viewer`, `$VIEWER`, `$ED_DEFAULT_VIEWER`, or an extension-specific viewer is set, those are used as-is (no read-only-ifying).
+- If the resolved editor has no known read-only flag (`readonly-flag` returned empty), the file opens writable and the skill prints a warning.
+- `--live` affects resolution only when a `viewer_live` entry exists; otherwise it's just a passthrough flag.
