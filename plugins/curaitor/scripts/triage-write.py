@@ -438,7 +438,7 @@ def cmd_write(args):
             confidence = article.get('confidence', 'uncertain')
             folder = CONFIDENCE_TO_FOLDER.get(confidence, 'Curaitor/Review')
             filename = sanitize_filename(article['title'])
-            rel_path = write_note(vault, folder, filename, fm, body)
+            write_note(vault, folder, filename, fm, body)
             known_urls.add(norm)  # prevent self-duplicates within batch
             written += 1
 
@@ -802,6 +802,7 @@ def cmd_find_leftovers(args):
     Prints JSON listing each leftover with the topic/catalog it's already in.
     Safe to run at the start of every interactive session as a pre-flight.
     """
+    del args  # unused; kept for dispatch-signature consistency
     vault = find_vault()
     # Gather URLs from topics / tools / bookmarks, keyed so we can report where
     # the match came from.
@@ -823,7 +824,7 @@ def cmd_find_leftovers(args):
     for kind, name, path in curated_sources:
         files = []
         if os.path.isdir(path):
-            for root, _dirs, names in os.walk(path):
+            for root, _, names in os.walk(path):
                 for f in names:
                     if f.endswith('.md') and not f.startswith('.'):
                         files.append(os.path.join(root, f))
@@ -873,7 +874,7 @@ def cmd_find_leftovers(args):
     json.dump({
         'vault': vault,
         'scanned_folders': scan_folders,
-        'curated_sources': [{'kind': k, 'name': n} for (k, n, _p) in curated_sources],
+        'curated_sources': [{'kind': k, 'name': n} for (k, n, _) in curated_sources],
         'leftover_count': len(leftovers),
         'leftovers': leftovers,
     }, sys.stdout, indent=2)

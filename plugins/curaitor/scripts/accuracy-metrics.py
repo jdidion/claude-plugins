@@ -13,7 +13,7 @@ import json
 import os
 import re
 import sys
-from datetime import date, datetime
+from datetime import date
 
 import yaml
 
@@ -287,12 +287,6 @@ def backfill(stats):
 
     print(f"Vault: {vault}")
 
-    def count_notes(folder):
-        path = os.path.join(vault, folder)
-        if not os.path.isdir(path):
-            return 0
-        return len([f for f in os.listdir(path) if f.endswith('.md') and not f.startswith('.')])
-
     def count_by_source(folder):
         path = os.path.join(vault, folder)
         counts = {'instapaper': 0, 'rss': 0, 'other': 0}
@@ -368,6 +362,7 @@ def cmd_trim(args):
     Safe to run repeatedly. If the window is already at or below
     ROLLING_CAP, a no-op write preserves file mtime but emits a status.
     """
+    del args  # unused; kept for dispatch-signature consistency
     stats = load_stats()
     window = stats.get('rolling_window') or []
     before = len(window)
