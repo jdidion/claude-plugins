@@ -277,11 +277,12 @@ echo '[{"path":"Inbox/title.md","frontmatter":{...},"content":"..."}]' | python 
 # Import feeds from OPML
 python scripts/import-opml.py FILE [--folder NAME] [--append]
 
-# Find correct Python (pixi/homebrew/system)
-eval "$(bash scripts/find-python.sh)"
-
-# Set up workspaces
+# Set up workspaces (discovers python, symlinks ~/.curaitor/bin/python3,
+# offers to add it to PATH so `python3 scripts/...` resolves correctly)
 bash scripts/setup.sh [review|triage|both]
+
+# Dynamic fallback if ~/.curaitor/bin isn't on PATH:
+#   eval "$(bash scripts/find-python.sh)" && $CURAITOR_PYTHON scripts/...
 ```
 
 ## Auto-tagging and topics
