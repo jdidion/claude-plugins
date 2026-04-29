@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+"""Assemble a code-review prompt package for cursor-run / the Claude reviewer agent.
+
+Creates a workdir containing:
+  instructions.md  - review template + codebase-access and review-rules boilerplate
+  context.md       - MR/branch metadata (only when any context flag is given)
+  diff.txt         - copy of the provided diff
+  prompt.md        - short model-facing prompt that references the other files
+
+Prints the workdir path to stdout (one line). Pass the workdir to cursor-run:
+  cursor-run --prompt-file <workdir>/prompt.md --workspace <repo-root>
+
+Exit codes: 0 ok, 2 argument error.
+
+Review rules:
+  - Default cap: 10 findings, 3 suggestions, severities CRITICAL/WARNING/SUGGESTION
+  - --deep flag relaxes the cap: unlimited findings, all severities
+"""
+
+import argparse
+import os
+import shutil
+import sys
+import tempfile
+
+
+DEFAULT_TEMPLATE = """You are reviewing code changes.
+
+## Review Focus
+1. Correctness: bugs, logic errors, off-by-one, null/nil handling
+2. Security: injection, auth bypass, secrets exposure, path traversal
+3. Error handling: swallowed errors, missing cleanup, resource leaks
+4. Edge cases: empty inputs, boundary values, concurrent access"""
+
+
+CAPPED_RULES_SUFFIX = """
+
+---
+## Codebase Access
+
+You have full read access to the repository. Before reporting findings:
+- Read the full source file for any file you are about to comment on, not just the diff hunk.
+- Verify that an apparent issue is real by checking surrounding code, imports, and related files.
+- Check whether a pattern you're flagging is consistent with the rest of the codebase.
+
+Do NOT rely solely on the diff to make judgments. The diff shows what changed; the source files show whether the change is correct.
+
+---
+## Review Rules
+
+- Maximum 10 findings, prioritized by severity.
+- Severity levels: CRITICAL, WARNING, SUGGESTION. Max 3 suggestions.
+- Only include suggestions with meaningful functional impact - skip cosmetic nits, naming preferences, comment rewording, and style opinions.
+- For each finding: state the file and line, what's wrong, why it matters, and what to do instead.
+- Provide a concise overall assessment with a quality score (X/10) and verdict (Approve / Needs Work / Critical Issues)."""
+
+
+DEEP_RULES_SUFFIX = """
+
+---
+## Codebase Access
+
+You have full read access to the repository. Before reporting findings:
+- Read the full source file for any file you are about to comment on, not just the diff hunk.
+- Verify that an apparent issue is real by checking surrounding code, imports, and related files.
+- Check whether a pattern you're flagging is consistent with the rest of the codebase.
+
+---
+## Review Rules (deep mode)
+
+- Report every issue you find, regardless of severity.
+- Severity levels: CRITICAL, WARNING, SUGGESTION, NIT. NIT covers cosmetic/style issues.
+- Group findings by severity.
+- For each finding: state the file and line, what's wrong, why it matters, and what to do instead.
+- Provide a concise overall assessment with a quality score (X/10) and verdict (Approve / Needs Work / Critical Issues)."""
+
+
+def find_template(repo_root: str) -> str | None:
+    for name in ("review-prompt-template.txt", "review-prompt.txt"):
+        path = os.path.join(repo_root, ".ci", "ai-review", name)
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+def find_claudemd(repo_root: str) -> str | None:
+    for name in ("CLAUDE.md", "AGENTS.md"):
+        path = os.path.join(repo_root, name)
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+def build_instructions(template_path: str | None, deep: bool) -> str:
+    if template_path:
+        with open(template_path) as f:
+            template = f.read().rstrip()
+    else:
+        template = DEFAULT_TEMPLATE
+    suffix = DEEP_RULES_SUFFIX if deep else CAPPED_RULES_SUFFIX
+    return template + suffix
+
+
+def build_context(title: str, description: str, commits: str, stat: str) -> str | None:
+    if not (title or description or commits or stat):
+        return None
+    parts = ["## Merge Request Context\n"]
+    if title:
+        parts.append(f"\n**Title:** {title}\n")
+    parts.append(f"\n**Description:**\n{description or '_No description provided._'}\n")
+    if commits:
+        parts.append(f"\n**Commits:**\n{commits}\n")
+    if stat:
+        parts.append(f"\n---\n## Files Changed\n\n{stat}\n")
+    return "".join(parts)
+
+
+def build_prompt(workdir: str, has_context: bool, claudemd_path: str | None) -> str:
+    parts = [
+        f"Review the code changes. Read and follow the instructions in {workdir}/instructions.md.",
+        f"The diff to review is in {workdir}/diff.txt.",
+    ]
+    if has_context:
+        parts.append(f"MR context is in {workdir}/context.md.")
+    if claudemd_path:
+        parts.append(f"Project conventions are in {claudemd_path}.")
+    return " ".join(parts) + "\n"
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--diff", required=True, help="Path to the diff file")
+    p.add_argument("--repo-root", required=True, help="Repository root (used to locate template + CLAUDE.md)")
+    p.add_argument("--title", default="", help="Branch name or MR title")
+    p.add_argument("--description", default="", help="MR description")
+    p.add_argument("--commits", default="", help="Commit list (free text)")
+    p.add_argument("--stat", default="", help="Diffstat output")
+    p.add_argument("--deep", action="store_true", help="Deep mode: report everything, no caps")
+    args = p.parse_args()
+
+    if not os.path.isfile(args.diff):
+        print(f"assemble-review-prompt: diff file not found: {args.diff}", file=sys.stderr)
+        return 2
+    if not os.path.isdir(args.repo_root):
+        print(f"assemble-review-prompt: repo root not a directory: {args.repo_root}", file=sys.stderr)
+        return 2
+
+    template_path = find_template(args.repo_root)
+    claudemd_path = find_claudemd(args.repo_root)
+
+    workdir = tempfile.mkdtemp(prefix="review-prompt.")
+
+    with open(os.path.join(workdir, "instructions.md"), "w") as f:
+        f.write(build_instructions(template_path, args.deep))
+
+    context = build_context(args.title, args.description, args.commits, args.stat)
+    has_context = context is not None
+    if context is not None:
+        with open(os.path.join(workdir, "context.md"), "w") as f:
+            f.write(context)
+
+    shutil.copy2(args.diff, os.path.join(workdir, "diff.txt"))
+
+    with open(os.path.join(workdir, "prompt.md"), "w") as f:
+        f.write(build_prompt(workdir, has_context, claudemd_path))
+
+    print(workdir)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

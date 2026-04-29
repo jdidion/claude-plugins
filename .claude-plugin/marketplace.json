@@ -53,6 +53,15 @@
       "author": { "name": "John Didion" },
       "license": "MIT",
       "keywords": ["editor", "viewer", "hx", "helix", "micro", "cmux", "markdown", "preview"]
+    },
+    {
+      "name": "crew",
+      "source": "./plugins/crew",
+      "description": "Multi-provider code review: Claude plus Cursor-provided models (GPT, Gemini, Grok, etc.) with deterministic pre-gates and attributed findings",
+      "version": "0.1.0",
+      "author": { "name": "John Didion" },
+      "license": "MIT",
+      "keywords": ["review", "code-review", "multi-model", "multi-provider", "cursor", "gitlab", "github"]
     }
   ]
 }

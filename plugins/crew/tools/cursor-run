@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# cursor-run: Invoke cursor-agent in batch mode and capture output + chatId.
+#
+# Usage:
+#   cursor-run --prompt-file <path> [--model <name>] [--workspace <path>]
+#              [--resume <chatId>] [--mode plan|ask]
+#              [--timeout <seconds>] [--output-format text|json]
+#
+# Prints to stdout:
+#   line 1: WORKDIR=<path>        # where output/stderr land
+#   line 2: CHATID=<id>           # present when parseable from JSON output
+#
+# Exit codes:
+#   0  success
+#   1  cursor-agent error (non-auth)
+#   2  argument error
+#   3  auth error (keychain locked, not logged in, etc.)
+#   124 timeout
+
+# --- Defaults ---
+MODEL="gpt-5.4-high"
+WORKSPACE="$PWD"
+RESUME=""
+MODE=""
+TIMEOUT=900
+OUTPUT_FORMAT="json"
+PROMPT_FILE=""
+
+# --- Parse args ---
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --prompt-file)   PROMPT_FILE="$2"; shift 2 ;;
+    --model)         MODEL="$2"; shift 2 ;;
+    --workspace)     WORKSPACE="$2"; shift 2 ;;
+    --resume)        RESUME="$2"; shift 2 ;;
+    --mode)          MODE="$2"; shift 2 ;;
+    --timeout)       TIMEOUT="$2"; shift 2 ;;
+    --output-format) OUTPUT_FORMAT="$2"; shift 2 ;;
+    -h|--help)
+      sed -n '3,22p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0 ;;
+    *) echo "cursor-run: unknown arg: $1" >&2; exit 2 ;;
+  esac
+done
+
+if [[ -z "$PROMPT_FILE" && -z "$RESUME" ]]; then
+  echo "cursor-run: --prompt-file is required (unless --resume is given with a continuation prompt)" >&2
+  exit 2
+fi
+
+if [[ -n "$PROMPT_FILE" && ! -f "$PROMPT_FILE" ]]; then
+  echo "cursor-run: prompt file not found: $PROMPT_FILE" >&2
+  exit 2
+fi
+
+if ! command -v cursor-agent &>/dev/null; then
+  echo "cursor-run: cursor-agent CLI not found on PATH" >&2
+  exit 2
+fi
+
+WORKDIR=$(mktemp -d -t cursor-run.XXXXXX)
+echo "WORKDIR=$WORKDIR"
+
+if [[ -n "$PROMPT_FILE" ]]; then
+  PROMPT="$(cat "$PROMPT_FILE")"
+else
+  PROMPT=""
+fi
+
+ARGS=(-p --trust --model "$MODEL" --workspace "$WORKSPACE" --output-format "$OUTPUT_FORMAT")
+[[ -n "$MODE" ]]   && ARGS+=(--mode "$MODE")
+[[ -n "$RESUME" ]] && ARGS+=(--resume "$RESUME")
+
+EXIT_CODE=0
+if [[ -n "$PROMPT" ]]; then
+  timeout "$TIMEOUT" cursor-agent "${ARGS[@]}" "$PROMPT" \
+    >"$WORKDIR/output.raw" 2>"$WORKDIR/stderr.txt" || EXIT_CODE=$?
+else
+  timeout "$TIMEOUT" cursor-agent "${ARGS[@]}" \
+    >"$WORKDIR/output.raw" 2>"$WORKDIR/stderr.txt" || EXIT_CODE=$?
+fi
+
+if [[ $EXIT_CODE -eq 124 ]]; then
+  echo "cursor-run: timed out after ${TIMEOUT}s" >&2
+  exit 124
+fi
+
+if [[ $EXIT_CODE -ne 0 ]]; then
+  if grep -qE "SecItemCopyMatching|not (logged|signed) in|CURSOR_API_KEY|unauthorized|authentication" "$WORKDIR/stderr.txt" 2>/dev/null; then
+    echo "cursor-run: auth failed. Likely causes:" >&2
+    echo "  - macOS Keychain locked or inaccessible (SecItemCopyMatching -67674)" >&2
+    echo "  - Not logged in: run 'cursor-agent login' in a fresh terminal" >&2
+    echo "  - Running under SSH/tmux without keychain access" >&2
+    echo "stderr: $WORKDIR/stderr.txt" >&2
+    exit 3
+  fi
+  echo "cursor-run: cursor-agent exited $EXIT_CODE" >&2
+  echo "stderr: $WORKDIR/stderr.txt" >&2
+  exit 1
+fi
+
+if [[ "$OUTPUT_FORMAT" == "json" ]] && [[ -s "$WORKDIR/output.raw" ]]; then
+  if command -v jq &>/dev/null; then
+    jq '.' <"$WORKDIR/output.raw" >"$WORKDIR/output.json" 2>/dev/null || cp "$WORKDIR/output.raw" "$WORKDIR/output.json"
+
+    CHATID=$(jq -r '.session_id // empty' <"$WORKDIR/output.raw" 2>/dev/null || true)
+    [[ -n "$CHATID" && "$CHATID" != "null" ]] && echo "CHATID=$CHATID"
+
+    jq -r '.result // empty' <"$WORKDIR/output.raw" >"$WORKDIR/reply.txt" 2>/dev/null || true
+
+    IS_ERROR=$(jq -r '.is_error // false' <"$WORKDIR/output.raw" 2>/dev/null || echo "false")
+    if [[ "$IS_ERROR" == "true" ]]; then
+      echo "cursor-run: cursor-agent reported is_error=true" >&2
+      echo "output: $WORKDIR/output.json" >&2
+      exit 1
+    fi
+  else
+    cp "$WORKDIR/output.raw" "$WORKDIR/output.json"
+  fi
+fi
+
+exit 0

@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+"""Emit a full-repo "snapshot diff" for the first crew:review run on a branch.
+
+Treats every tracked, non-binary source file as a freshly-added file in unified
+diff format (--- /dev/null / +++ b/<path>). Skips files larger than a per-file
+cap and stops emitting once a global size cap is hit, warning on stderr.
+
+Usage: snapshot-diff --repo-root <path> [--max-per-file-kb N] [--max-total-mb N]
+
+Exit 0 on success (even if some files were skipped). Exit 2 on argument errors.
+"""
+
+import argparse
+import os
+import pathlib
+import subprocess
+import sys
+
+TEXT_SUFFIXES = {
+    ".py", ".pyi", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
+    ".go", ".rs", ".java", ".kt", ".scala", ".c", ".h", ".cc", ".cpp", ".hpp", ".hh", ".cxx",
+    ".rb", ".php", ".pl", ".pm", ".sh", ".bash", ".zsh", ".fish",
+    ".lua", ".r", ".jl", ".swift", ".m", ".mm",
+    ".md", ".rst", ".txt", ".yaml", ".yml", ".toml", ".json", ".ini", ".cfg", ".conf",
+    ".sql", ".html", ".htm", ".css", ".scss", ".sass", ".less",
+    ".dockerfile", ".tf", ".hcl", ".nix",
+    ".xml", ".proto", ".graphql", ".wdl", ".cwl", ".nf", ".smk",
+}
+
+
+def is_text_file(path: pathlib.Path) -> bool:
+    if path.suffix.lower() in TEXT_SUFFIXES:
+        return True
+    # Check for shebang or no extension (allow small files without extension).
+    try:
+        with path.open("rb") as f:
+            chunk = f.read(8000)
+    except OSError:
+        return False
+    if b"\0" in chunk:
+        return False
+    # Heuristic: mostly printable ASCII/UTF-8.
+    try:
+        chunk.decode("utf-8")
+        return True
+    except UnicodeDecodeError:
+        return False
+
+
+def list_tracked_files(repo_root: pathlib.Path) -> list[str]:
+    result = subprocess.run(
+        ["git", "ls-files"],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return [line for line in result.stdout.splitlines() if line]
+
+
+def emit_file_as_added(rel_path: str, content: str) -> str:
+    lines = content.splitlines(keepends=True)
+    n = len(lines)
+    header = (
+        f"diff --git a/{rel_path} b/{rel_path}\n"
+        f"new file mode 100644\n"
+        f"--- /dev/null\n"
+        f"+++ b/{rel_path}\n"
+        f"@@ -0,0 +1,{n} @@\n"
+    )
+    body = "".join("+" + line if not line.endswith("\n") else "+" + line for line in lines)
+    if body and not body.endswith("\n"):
+        body += "\n\\ No newline at end of file\n"
+    return header + body
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--repo-root", required=True)
+    p.add_argument("--max-per-file-kb", type=int, default=256, help="Skip individual files larger than this (default 256 KB).")
+    p.add_argument("--max-total-mb", type=int, default=4, help="Stop emitting once cumulative diff size exceeds this (default 4 MB).")
+    args = p.parse_args()
+
+    repo_root = pathlib.Path(args.repo_root).resolve()
+    if not (repo_root / ".git").exists():
+        print(f"snapshot-diff: not a git repo: {repo_root}", file=sys.stderr)
+        return 2
+
+    per_file_cap = args.max_per_file_kb * 1024
+    total_cap = args.max_total_mb * 1024 * 1024
+    total_bytes = 0
+    skipped_size = 0
+    skipped_binary = 0
+    truncated = False
+
+    for rel in list_tracked_files(repo_root):
+        if total_bytes >= total_cap:
+            truncated = True
+            break
+        abs_path = repo_root / rel
+        if not abs_path.is_file():
+            continue  # submodules, symlinks to nowhere
+        try:
+            size = abs_path.stat().st_size
+        except OSError:
+            continue
+        if size > per_file_cap:
+            skipped_size += 1
+            continue
+        if not is_text_file(abs_path):
+            skipped_binary += 1
+            continue
+        try:
+            content = abs_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            skipped_binary += 1
+            continue
+        chunk = emit_file_as_added(rel, content)
+        total_bytes += len(chunk.encode("utf-8"))
+        if total_bytes > total_cap:
+            truncated = True
+            break
+        sys.stdout.write(chunk)
+
+    notes = []
+    if skipped_binary:
+        notes.append(f"{skipped_binary} binary/non-UTF8")
+    if skipped_size:
+        notes.append(f"{skipped_size} over {args.max_per_file_kb}KB")
+    if truncated:
+        notes.append(f"truncated at {args.max_total_mb}MB total")
+    if notes:
+        print(f"snapshot-diff: skipped {', '.join(notes)}", file=sys.stderr)
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

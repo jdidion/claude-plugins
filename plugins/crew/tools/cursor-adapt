@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# cursor-adapt: Create/cleanup cursor scaffolding (AGENTS.md symlink, .cursor/mcp.json).
+#
+# Usage:
+#   cursor-adapt setup --repo-root <path>
+#   cursor-adapt cleanup --repo-root <path>
+#
+# On setup: creates AGENTS.md -> CLAUDE.md symlink if AGENTS.md doesn't exist,
+# and writes .cursor/mcp.json from .mcp.json (translating fields Cursor rejects).
+# Tracks created files in .cursor/.crew-created for cleanup.
+#
+# On cleanup: removes only what setup created. Idempotent.
+
+CMD="${1:-}"
+if [[ "$CMD" == "-h" || "$CMD" == "--help" ]]; then
+  sed -n '3,14p' "$0" | sed 's/^# \{0,1\}//'
+  exit 0
+fi
+shift || true
+
+REPO_ROOT=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --repo-root) REPO_ROOT="$2"; shift 2 ;;
+    -h|--help)
+      sed -n '3,14p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0 ;;
+    *) echo "cursor-adapt: unknown arg: $1" >&2; exit 2 ;;
+  esac
+done
+
+if [[ -z "$REPO_ROOT" ]]; then
+  echo "cursor-adapt: --repo-root is required" >&2
+  echo "Usage: cursor-adapt setup|cleanup --repo-root <path>" >&2
+  exit 2
+fi
+
+if [[ ! -d "$REPO_ROOT" ]]; then
+  echo "cursor-adapt: repo-root not a directory: $REPO_ROOT" >&2
+  exit 2
+fi
+
+MARKER="$REPO_ROOT/.cursor/.crew-created"
+
+translate_mcp_json() {
+  # Strip fields Cursor rejects (e.g. "type": "http") from a Claude MCP config.
+  # Reads stdin, writes stdout.
+  if command -v jq &>/dev/null; then
+    jq 'walk(if type == "object" and has("type") and .type == "http" then del(.type) else . end)' 2>/dev/null \
+      || cat
+  else
+    cat
+  fi
+}
+
+case "$CMD" in
+  setup)
+    mkdir -p "$REPO_ROOT/.cursor"
+    : >"$MARKER"
+
+    if [[ -f "$REPO_ROOT/CLAUDE.md" && ! -e "$REPO_ROOT/AGENTS.md" ]]; then
+      ( cd "$REPO_ROOT" && ln -s CLAUDE.md AGENTS.md )
+      echo "AGENTS.md" >>"$MARKER"
+    fi
+
+    if [[ -f "$REPO_ROOT/.mcp.json" && ! -f "$REPO_ROOT/.cursor/mcp.json" ]]; then
+      translate_mcp_json <"$REPO_ROOT/.mcp.json" >"$REPO_ROOT/.cursor/mcp.json"
+      echo ".cursor/mcp.json" >>"$MARKER"
+    fi
+
+    echo "cursor-adapt: setup complete"
+    ;;
+
+  cleanup)
+    if [[ ! -f "$MARKER" ]]; then
+      echo "cursor-adapt: nothing to clean up (no marker at $MARKER)"
+      exit 0
+    fi
+
+    while IFS= read -r item; do
+      [[ -z "$item" ]] && continue
+      target="$REPO_ROOT/$item"
+      if [[ -L "$target" || -f "$target" ]]; then
+        rm -f "$target"
+      fi
+    done <"$MARKER"
+    rm -f "$MARKER"
+
+    # Remove .cursor dir if now empty
+    if [[ -d "$REPO_ROOT/.cursor" ]] && [[ -z "$(ls -A "$REPO_ROOT/.cursor" 2>/dev/null)" ]]; then
+      rmdir "$REPO_ROOT/.cursor"
+    fi
+
+    echo "cursor-adapt: cleanup complete"
+    ;;
+
+  *)
+    echo "cursor-adapt: unknown command: $CMD" >&2
+    echo "Usage: cursor-adapt setup|cleanup --repo-root <path>" >&2
+    exit 2 ;;
+esac

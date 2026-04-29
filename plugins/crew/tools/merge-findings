@@ -1,0 +1,239 @@
+#!/usr/bin/env python3
+"""Merge per-model code review replies into one attributed unified report.
+
+Inputs: one or more `--reply <label>:<path>` pairs, where <label> is the model
+identifier (e.g. "Claude", "gpt-5.4-xhigh", "gemini-3.1-pro") and <path> is the
+reviewer's reply text.
+
+The merger does NOT try to deduplicate findings semantically - that's too
+expensive and unreliable to do without another LLM call, which would defeat
+the purpose. Instead, it emits one section per reviewer with its findings
+verbatim, then a lightweight "cross-reviewer hints" section that flags
+findings likely to overlap (same file, similar line, similar keywords).
+
+Also emits an `agreements.md` companion file when overlaps are detected, so
+the calling skill can attribute findings with `[All]`, `[Claude+GPT]`, etc.
+
+Usage:
+  merge-findings --out <outdir> --reply Claude:<path> --reply gpt:<path> ...
+
+Outputs (in <outdir>):
+  merged.md       - full merged report
+  agreements.md   - cross-reviewer overlap hints (may be empty)
+
+Exit codes: 0 ok, 2 argument error.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import sys
+from dataclasses import dataclass
+
+
+FILE_LINE_RE = re.compile(r"(?:^|[\s(`*_])([\w./\-+]+\.\w+)(?::|\sline\s|@)?(\d+)?", re.IGNORECASE)
+
+
+@dataclass
+class Finding:
+    reviewer: str
+    text: str
+    files: set[str]
+    severity: str  # CRITICAL, WARNING, SUGGESTION, NIT, UNKNOWN
+
+
+SEVERITY_ORDER = {"CRITICAL": 0, "WARNING": 1, "SUGGESTION": 2, "NIT": 3, "UNKNOWN": 4}
+
+
+def detect_severity(text: str) -> str:
+    up = text.upper()
+    for sev in ("CRITICAL", "WARNING", "SUGGESTION", "NIT"):
+        if sev in up:
+            return sev
+    return "UNKNOWN"
+
+
+def extract_files(text: str) -> set[str]:
+    files = set()
+    for m in FILE_LINE_RE.finditer(text):
+        candidate = m.group(1)
+        # Filter out common false positives: require a dot and a recognizable extension.
+        if "." in candidate and len(candidate.split(".")[-1]) <= 10:
+            files.add(candidate)
+    return files
+
+
+SPLIT_PATTERNS = [
+    # Numbered/bulleted finding with severity marker
+    r"\n(?=\s*(?:\d+\.|\*|-|#{1,6}\s)\s*\*?\*?(?:CRITICAL|WARNING|SUGGESTION|NIT|Issue|Finding)\b)",
+    # Lines starting with "Severity:" or "Priority:"
+    r"\n(?=\s*(?:Severity|Priority)\s*(?:\([^)]+\))?\s*[:=])",
+    # Bullet pointing at a file:line reference
+    r"\n(?=\s*(?:\*|-)\s+\*?\*?[\w./\-+]+\.\w+:\d+)",
+    # Markdown header followed by severity
+    r"\n\s*\n(?=#+\s)",
+]
+
+
+def split_findings(reply_text: str) -> list[str]:
+    """Split a reviewer's reply into finding-like chunks.
+
+    Tries several patterns in order; the first pattern that yields multiple
+    chunks wins. Chunks shorter than 30 chars are dropped as noise.
+    """
+    for pattern in SPLIT_PATTERNS:
+        chunks = re.split(pattern, reply_text, flags=re.IGNORECASE)
+        if len(chunks) > 1:
+            kept = [c.strip() for c in chunks if len(c.strip()) > 30]
+            if len(kept) > 1:
+                return kept
+    # Fallback: return whole reply as one chunk if it has any content.
+    stripped = reply_text.strip()
+    return [stripped] if len(stripped) > 30 else []
+
+
+def find_overlaps(findings: list[Finding]) -> list[list[Finding]]:
+    """Group findings that likely refer to the same issue.
+
+    Heuristic: two findings overlap if they share a file AND share at least one
+    non-trivial keyword (stopwords removed). Transitive closure forms groups.
+    """
+    stop = {
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "this",
+        "that", "these", "those", "to", "of", "in", "on", "at", "by", "for", "with",
+        "as", "it", "its", "and", "or", "but", "not", "no", "if", "then", "else",
+        "should", "could", "would", "can", "may", "will", "file", "line", "code",
+        "function", "method", "class", "variable", "value", "case", "also", "when",
+    }
+
+    def kw(text: str) -> set[str]:
+        words = re.findall(r"[a-zA-Z_][a-zA-Z0-9_]{3,}", text.lower())
+        return {w for w in words if w not in stop}
+
+    keywords = [kw(f.text) for f in findings]
+    n = len(findings)
+    parent = list(range(n))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(i: int, j: int):
+        ri, rj = find(i), find(j)
+        if ri != rj:
+            parent[ri] = rj
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            if findings[i].reviewer == findings[j].reviewer:
+                continue
+            if not (findings[i].files & findings[j].files):
+                continue
+            shared_kw = keywords[i] & keywords[j]
+            if len(shared_kw) >= 2:
+                union(i, j)
+
+    groups: dict[int, list[Finding]] = {}
+    for i in range(n):
+        groups.setdefault(find(i), []).append(findings[i])
+    # Only return groups with >1 reviewer
+    return [g for g in groups.values() if len({f.reviewer for f in g}) > 1]
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--out", required=True, help="Output directory (will be created)")
+    p.add_argument("--reply", action="append", required=True, metavar="LABEL:PATH",
+                   help="Reviewer reply file. Repeat for multiple reviewers.")
+    args = p.parse_args()
+
+    os.makedirs(args.out, exist_ok=True)
+
+    reviewers: list[tuple[str, str]] = []  # (label, text)
+    for spec in args.reply:
+        if ":" not in spec:
+            print(f"merge-findings: --reply requires LABEL:PATH (got: {spec})", file=sys.stderr)
+            return 2
+        label, path = spec.split(":", 1)
+        if not os.path.isfile(path):
+            print(f"merge-findings: reply file not found: {path}", file=sys.stderr)
+            # Still record an empty reviewer so the merged report notes it was unavailable.
+            reviewers.append((label, ""))
+            continue
+        with open(path) as f:
+            reviewers.append((label, f.read()))
+
+    # Collect findings across reviewers.
+    findings: list[Finding] = []
+    for label, text in reviewers:
+        if not text.strip():
+            continue
+        for chunk in split_findings(text):
+            findings.append(Finding(
+                reviewer=label,
+                text=chunk,
+                files=extract_files(chunk),
+                severity=detect_severity(chunk),
+            ))
+
+    overlaps = find_overlaps(findings)
+
+    # Write merged.md: per-reviewer sections with raw output, then overlap hints.
+    merged_path = os.path.join(args.out, "merged.md")
+    with open(merged_path, "w") as f:
+        f.write("# Multi-provider code review\n\n")
+        f.write(f"Reviewers: {', '.join(label for label, _ in reviewers)}\n\n")
+
+        if overlaps:
+            f.write(f"**{len(overlaps)}** finding cluster(s) appear to be flagged by multiple reviewers. ")
+            f.write("See the Cross-reviewer agreements section below for details.\n\n")
+
+        f.write("---\n\n")
+        for label, text in reviewers:
+            f.write(f"## Reviewer: {label}\n\n")
+            if not text.strip():
+                f.write("_No reply captured. Reviewer may have failed or timed out._\n\n")
+            else:
+                f.write(text.rstrip() + "\n\n")
+            f.write("---\n\n")
+
+        if overlaps:
+            f.write("## Cross-reviewer agreements\n\n")
+            f.write("Heuristic clusters - findings that likely refer to the same issue ")
+            f.write("(same file, overlapping keywords). The calling skill may use these ")
+            f.write("to attribute findings with `[All]`, `[Claude+GPT]`, etc.\n\n")
+            for i, group in enumerate(overlaps, 1):
+                reviewers_in_group = sorted({f.reviewer for f in group})
+                files_in_group = sorted({fn for f in group for fn in f.files})
+                f.write(f"### Cluster {i}: {' + '.join(reviewers_in_group)}\n\n")
+                if files_in_group:
+                    f.write(f"Files: `{', '.join(files_in_group)}`\n\n")
+                for finding in group:
+                    snippet = finding.text[:200].replace("\n", " ")
+                    f.write(f"- **[{finding.reviewer}]** ({finding.severity}): {snippet}...\n")
+                f.write("\n")
+
+    # Write agreements.md: machine-readable for downstream tagging.
+    agreements_path = os.path.join(args.out, "agreements.md")
+    with open(agreements_path, "w") as f:
+        f.write("# Agreements\n\n")
+        if not overlaps:
+            f.write("No cross-reviewer overlaps detected.\n")
+        for i, group in enumerate(overlaps, 1):
+            reviewers_in_group = sorted({f.reviewer for f in group})
+            files_in_group = sorted({fn for f in group for fn in f.files})
+            f.write(f"## Cluster {i}\n")
+            f.write(f"- Reviewers: {', '.join(reviewers_in_group)}\n")
+            f.write(f"- Files: {', '.join(files_in_group) or '(none extracted)'}\n")
+            f.write(f"- Severity (highest): {min((f.severity for f in group), key=lambda s: SEVERITY_ORDER.get(s, 99))}\n\n")
+
+    print(args.out)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
