@@ -1,6 +1,6 @@
 # crew
 
-Multi-provider code review for Claude Code. Runs Claude alongside external model families (GPT, Gemini, Grok — all via Cursor's CLI) in parallel, then merges findings with attribution so you can see which model caught what.
+Multi-provider code review for Claude Code. Runs Claude alongside external model families (GPT, Gemini, Grok, local models, etc.) in parallel through pluggable backends, then merges findings with attribution so you can see which model caught what.
 
 ## Why multi-provider?
 
@@ -28,11 +28,9 @@ Three scopes, one command:
 
 Three reviewers by default:
 
-1. **Claude** via Bedrock (through the `code-reviewer` agent — no external CLI)
-2. **`gpt-5`** via Cursor
-3. **`gemini-3.1-pro`** via Cursor
-
-All non-Claude models route through Cursor's enterprise subscription. When OpenAI models land on AWS Bedrock, `gpt-*` will route natively (no Cursor hop); until then, Cursor is the sanctioned path.
+1. **Claude** — via the `code-reviewer` agent (no external CLI; uses whatever backend Claude Code is configured for — Bedrock, Anthropic API, etc.)
+2. **`gpt-5`** — routed to the best available backend
+3. **`gemini-3.1-pro`** — routed to the best available backend
 
 Override per-invocation:
 
@@ -42,6 +40,13 @@ Override per-invocation:
 /crew:review --mr 123 with claude-opus-4-7-thinking-high and gpt-5
 ```
 
+Override defaults via `~/.config/crew/config.toml`:
+
+```toml
+[defaults]
+roster = ["claude", "gpt-5.1", "gemini-3.2-pro"]
+```
+
 Deep mode reports every finding instead of capping at 10:
 
 ```
@@ -49,12 +54,61 @@ Deep mode reports every finding instead of capping at 10:
 /crew:review --mr 123 --deep post and monitor
 ```
 
+## Backends
+
+Non-Claude models run through pluggable backend scripts at `tools/backends/<name>`. Each has the same interface:
+
+```
+backends/<name> --prompt-file <path> [--model <id>] [--workspace <path>]
+```
+
+Prints `WORKDIR=<path>` on stdout and writes `reply.txt` inside the workdir.
+
+**Shipped:**
+
+| Backend | Status | Required binary | Notes |
+|---|---|---|---|
+| `cursor` | Full | `cursor-agent` | Hosts GPT, Gemini, Grok, Claude under one enterprise subscription |
+| `codex` | Stub (experimental) | `codex` | OpenAI Codex CLI. CLI shape unverified — help wanted |
+
+**Planned** (help wanted — see the repo's issues): `gemini`, `ollama`, `anthropic-api`.
+
+### Routing
+
+Per-model routing is decided by `tools/resolve-backend <model-id>`. Resolution order:
+
+1. User config at `~/.config/crew/config.toml` under `[model_routing]` (glob patterns, first match wins)
+2. Built-in prefix table (see `tools/resolve-backend` header for the current list)
+3. Fallback to `cursor` if installed — Cursor's gateway handles most model families
+
+The resolver picks the first backend in each list whose CLI is on PATH. Users with `cursor-agent` installed get correct behavior for GPT, Gemini, Grok, and Claude without any configuration.
+
+Run `tools/resolve-backend --list-available` to see detected backends.
+
+### Configuration
+
+All optional. `~/.config/crew/config.toml`:
+
+```toml
+[defaults]
+roster = ["claude", "gpt-5", "gemini-3.1-pro"]
+
+[model_routing]
+"gpt-*" = "codex"              # explicit — codex only
+"gemini-*" = ["gemini", "cursor"]  # try gemini first, fall back to cursor
+"claude-*" = "anthropic-api"
+
+[backends.codex]
+# command = "/opt/homebrew/bin/codex"   # PATH override if needed
+```
+
 ## Requirements
 
-- `cursor-agent` CLI on PATH, authenticated (`cursor-agent login`)
+- At least one backend CLI on PATH (see above). `cursor-agent` is the broadest; install whichever you have access to.
 - `glab` CLI for MR reviews / `gh` CLI for PR reviews
 - `jq` and `git`
-- A Claude Code session with access to `lsp_diagnostics` and `ast_grep_search` tools (most standard installations)
+- Python 3.10+ (3.11+ reads TOML natively; older: `pip install tomli`)
+- A Claude Code session with access to `lsp_diagnostics` and `ast_grep_search` tools
 
 See `docs/security.md` for the data-egress story.
 
@@ -82,11 +136,12 @@ Overlap detection is heuristic (same file + shared non-stopword keywords). Not p
 
 | Tool | Purpose |
 |---|---|
+| `tools/resolve-backend` | Pick the backend script for a given model ID |
 | `tools/assemble-review-prompt` | Build a shared review prompt package (instructions + context + diff). Supports `--deep`. |
-| `tools/cursor-run` | Invoke `cursor-agent` in batch mode. |
-| `tools/cursor-adapt` | Create/cleanup Cursor scaffolding (AGENTS.md symlink, `.cursor/mcp.json` translation). |
+| `tools/backends/<name>` | Invoke a specific CLI in batch mode. Same interface across all backends. |
+| `tools/cursor-adapt` | Create/cleanup Cursor scaffolding (AGENTS.md symlink, `.cursor/mcp.json` translation). Only used when the cursor backend is in the roster. |
 | `tools/merge-findings` | Parse per-reviewer replies, detect overlap clusters, emit a unified report. |
-| `tools/snapshot-diff` | First-run incremental mode helper: emit a whole-tree "all files as new" diff so reviewers see current state. |
+| `tools/snapshot-diff` | First-run incremental mode helper: emit a whole-tree "all files as new" diff. |
 
 ## Credits
 

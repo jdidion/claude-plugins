@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+"""Resolve which backend script should handle a given model ID.
+
+Usage:
+    resolve-backend <model-id>          # prints absolute path to backend script
+    resolve-backend --list-available    # prints detected backends (one per line)
+    resolve-backend --defaults          # prints default roster (one model per line)
+
+Resolution order (first match wins):
+    1. User config:  ~/.config/crew/config.toml  [model_routing] table
+       (glob patterns, first match wins)
+    2. Built-in prefix table (see BUILTIN_ROUTES below).
+    3. Fallback to `cursor` if cursor-agent is installed (broad model support).
+    4. Error with exit code 2.
+
+Per-route backend selection:
+    Each route resolves to a backend *name* (not a command). The actual
+    backend script is <plugin>/tools/backends/<name>. If multiple backends
+    could host a model (e.g. gpt-5 on codex or cursor), prefer the first one
+    that's installed.
+
+Config shape (all keys optional):
+    [defaults]
+    roster = ["claude", "gpt-5", "gemini-3.1-pro"]
+
+    [model_routing]
+    "gpt-*" = "codex"            # explicit override — codex only
+    "gemini-*" = ["gemini", "cursor"]  # try gemini first, fall back to cursor
+    "claude-*" = "anthropic-api"
+
+    [backends.codex]
+    # command = "/usr/local/bin/codex"   # override PATH detection
+
+Exit codes:
+    0  success
+    2  argument error / no backend found / model unrouteable
+"""
+
+from __future__ import annotations
+
+import argparse
+import fnmatch
+import os
+import pathlib
+import shutil
+import sys
+
+try:
+    import tomllib  # Python 3.11+
+except ModuleNotFoundError:
+    tomllib = None
+    try:
+        import tomli as tomllib  # type: ignore
+    except ModuleNotFoundError:
+        pass
+
+PLUGIN_ROOT = pathlib.Path(__file__).resolve().parent.parent
+BACKENDS_DIR = PLUGIN_ROOT / "tools" / "backends"
+
+# Built-in routes: ordered list of (glob, [preferred backend names]).
+# First matching glob wins; within the list, first-installed backend wins.
+BUILTIN_ROUTES: list[tuple[str, list[str]]] = [
+    ("gpt-*", ["codex", "cursor"]),
+    ("o1-*", ["codex", "cursor"]),
+    ("o3-*", ["codex", "cursor"]),
+    ("gemini-*", ["gemini", "cursor"]),
+    ("grok-*", ["cursor"]),
+    ("claude-*", ["anthropic-api", "cursor"]),
+    ("llama*", ["ollama"]),
+    ("mistral*", ["ollama"]),
+    ("qwen*", ["ollama"]),
+    ("deepseek*", ["ollama"]),
+    ("phi*", ["ollama"]),
+]
+
+# Binary name each backend detects. Used by --list-available and fallback.
+BACKEND_BINARIES: dict[str, str] = {
+    "cursor": "cursor-agent",
+    "codex": "codex",
+    "gemini": "gemini",
+    "ollama": "ollama",
+    "anthropic-api": "curl",  # needs ANTHROPIC_API_KEY env; curl is ubiquitous
+}
+
+DEFAULT_ROSTER = ["claude", "gpt-5", "gemini-3.1-pro"]
+
+
+def load_config() -> dict:
+    path = (
+        pathlib.Path(os.environ.get("XDG_CONFIG_HOME", str(pathlib.Path.home() / ".config")))
+        / "crew" / "config.toml"
+    )
+    if not path.is_file() or tomllib is None:
+        return {}
+    try:
+        with path.open("rb") as f:
+            return tomllib.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def backend_installed(name: str, config: dict) -> bool:
+    """A backend is installed if its script exists AND its binary (or override) is on PATH."""
+    script = BACKENDS_DIR / name
+    if not script.is_file():
+        return False
+
+    override = config.get("backends", {}).get(name, {}).get("command")
+    if override:
+        return os.path.isfile(override) and os.access(override, os.X_OK)
+
+    required_bin = BACKEND_BINARIES.get(name)
+    if required_bin is None:
+        return False
+
+    # anthropic-api also needs the env var
+    if name == "anthropic-api" and not os.environ.get("ANTHROPIC_API_KEY"):
+        return False
+
+    return shutil.which(required_bin) is not None
+
+
+def list_available(config: dict) -> list[str]:
+    return [name for name in BACKEND_BINARIES if backend_installed(name, config)]
+
+
+def resolve(model: str, config: dict) -> pathlib.Path:
+    # User routes win over built-ins.
+    user_routes = config.get("model_routing", {})
+    for pattern, target in user_routes.items():
+        if fnmatch.fnmatchcase(model, pattern):
+            candidates = [target] if isinstance(target, str) else list(target)
+            for name in candidates:
+                if backend_installed(name, config):
+                    return BACKENDS_DIR / name
+            # Configured but nothing installed — error loudly so users know
+            print(
+                f"resolve-backend: config routes '{pattern}' to {candidates} "
+                f"but none are installed",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+
+    for pattern, candidates in BUILTIN_ROUTES:
+        if fnmatch.fnmatchcase(model, pattern):
+            for name in candidates:
+                if backend_installed(name, config):
+                    return BACKENDS_DIR / name
+            # Pattern matched but no candidate installed — continue to next rule
+            # (might fall through to broad cursor fallback)
+            continue
+
+    # Fallback: cursor handles many model families via its gateway.
+    if backend_installed("cursor", config):
+        return BACKENDS_DIR / "cursor"
+
+    print(
+        f"resolve-backend: no backend can handle model {model!r}. "
+        f"Installed backends: {list_available(config) or 'none'}",
+        file=sys.stderr,
+    )
+    sys.exit(2)
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    g = p.add_mutually_exclusive_group(required=True)
+    g.add_argument("model", nargs="?", help="Model ID to route")
+    g.add_argument("--list-available", action="store_true",
+                   help="Print detected backend names, one per line")
+    g.add_argument("--defaults", action="store_true",
+                   help="Print the default roster, one model per line")
+    args = p.parse_args()
+
+    config = load_config()
+
+    if args.list_available:
+        for name in list_available(config):
+            print(name)
+        return 0
+
+    if args.defaults:
+        roster = config.get("defaults", {}).get("roster", DEFAULT_ROSTER)
+        for m in roster:
+            print(m)
+        return 0
+
+    if args.model:
+        print(resolve(args.model, config))
+        return 0
+
+    p.error("missing model argument")
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
