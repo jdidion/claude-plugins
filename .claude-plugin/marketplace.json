@@ -57,8 +57,8 @@
     {
       "name": "crew",
       "source": "./plugins/crew",
-      "description": "Multi-provider code review: Claude plus Cursor-provided models (GPT, Gemini, Grok, etc.) with deterministic pre-gates and attributed findings",
-      "version": "0.1.0",
+      "description": "Multi-provider code review for Claude Code. Pluggable backends route models (GPT, Gemini, Grok, local) through the right CLI. Deterministic pre-gates, attributed findings, post-and-monitor on GitLab/GitHub.",
+      "version": "0.2.0",
       "author": { "name": "John Didion" },
       "license": "MIT",
       "keywords": ["review", "code-review", "multi-model", "multi-provider", "cursor", "gitlab", "github"]

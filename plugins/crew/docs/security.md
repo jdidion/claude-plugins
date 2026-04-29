@@ -8,18 +8,22 @@ When you invoke `/crew:review` (optionally with `--local` / `--mr N` / `--pr N`)
 - A review prompt with instructions
 - Any `CLAUDE.md`/`AGENTS.md` project conventions that exist
 
-To these destinations:
+Destinations depend on which backends are configured. Each non-Claude model is routed to a backend via `tools/resolve-backend`:
 
-| Reviewer | Destination | Transport |
+| Backend | Transport | Egresses to |
 |---|---|---|
-| Claude (via Bedrock) | AWS Bedrock, configured region | Already inside your AWS boundary — no new egress |
-| Cursor models (GPT, Gemini, Grok, Claude-via-Cursor) | Cursor's routing layer, then the upstream provider (OpenAI for GPT, Google for Gemini, xAI for Grok, Anthropic for Claude) | Egresses to Cursor. Uses your Cursor Enterprise account. |
+| (Claude, via the `code-reviewer` agent) | Whatever Claude Code is configured to use (Bedrock, Anthropic API, etc.) | Inside your configured Claude path |
+| `cursor` | `cursor-agent` CLI → Cursor's gateway | Cursor's infrastructure, then upstream providers |
+| `codex` | `codex` CLI → OpenAI API | OpenAI |
+| `gemini` (planned) | `gemini` CLI → Google | Google |
+| `ollama` (planned) | local `ollama` daemon | Nothing — runs entirely locally |
+| `anthropic-api` (planned) | direct `curl` against `api.anthropic.com` | Anthropic |
 
-When OpenAI models become available on AWS Bedrock, GPT will route natively (same "already inside your AWS boundary" treatment as Claude). Until then, all non-Claude reviewers go through Cursor.
+Run `tools/resolve-backend --list-available` to see which backends are active on your system, and `tools/resolve-backend <model>` to see where a specific model would route.
 
 ## Vendor clearance is your responsibility
 
-Before running this plugin on a given repository, confirm that the vendors in the path (Cursor Enterprise for non-Claude reviewers; your Bedrock provider for Claude) are cleared under your employer's enterprise agreements or your personal usage policy for that code. If you're unsure, ask whoever owns procurement / InfoSec / legal before running it on sensitive code.
+Before running this plugin on a repository, confirm that every vendor in the backend chain (Cursor, OpenAI, Google, Anthropic, etc. — whichever backends you have enabled) is cleared under your employer's enterprise agreements or your personal usage policy for that code. If you're unsure, ask whoever owns procurement / InfoSec / legal before running it on sensitive code.
 
 ## Not covered
 
@@ -28,8 +32,8 @@ Before running this plugin on a given repository, confirm that the vendors in th
 
 ## What the plugin does not do
 
-- It does not store or transmit credentials. Auth is handled by `cursor-agent login`, which uses the OS keychain.
-- It does not log prompts or replies anywhere outside the ephemeral `mktemp` workdirs, which are not cleaned up on purpose (so you can audit them if a review looks off). Clean them up manually with `rm -rf /tmp/cursor-run.* /tmp/review-prompt.*` when you want to.
+- It does not store or transmit credentials. Auth is handled by the backend CLIs themselves (`cursor-agent login`, `codex login`, etc.), which use the OS keychain or dedicated config files.
+- It does not log prompts or replies anywhere outside the ephemeral `mktemp` workdirs, which are not cleaned up on purpose (so you can audit them if a review looks off). Clean them up manually with `rm -rf /tmp/cursor-run.* /tmp/codex-run.* /tmp/review-prompt.*` when you want to.
 - It does not post to GitLab/GitHub unless you explicitly asked for post-and-monitor mode.
 - It does not modify the repo you're reviewing. The Claude reviewer agent has Write and Edit disabled.
 
@@ -37,7 +41,7 @@ Before running this plugin on a given repository, confirm that the vendors in th
 
 Every reviewer run produces a workdir under `/tmp`:
 
-- `cursor-run.XXXX/` — cursor-agent's raw output, stderr, and extracted reply
+- `cursor-run.XXXX/` / `codex-run.XXXX/` / etc. — per-backend raw output, stderr, and extracted reply
 - `review-prompt.XXXX/` — the assembled prompt package (instructions, diff, context)
 - Merge output is wherever the calling skill wrote it (usually another `mktemp`)
 

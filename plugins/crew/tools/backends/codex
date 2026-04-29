@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# codex: Invoke OpenAI Codex CLI in batch mode. Same contract as cursor:
+#   prints "WORKDIR=<path>" on stdout, writes reply.txt inside the workdir.
+#
+# STATUS: STUB. Codex CLI's batch interface isn't verified here. Tested usage
+# should be wired up by a contributor who has Codex access. Filed as
+# https://github.com/jdidion/claude-plugins/issues/... (track follow-up).
+#
+# Expected CLI shape (will need verification):
+#   codex run --prompt-file <path> --model <id> --workspace <path> --json
+#
+# Usage:
+#   codex --prompt-file <path> [--model <name>] [--workspace <path>]
+#         [--timeout <seconds>]
+#
+# Exit codes:
+#   0   success
+#   1   codex error
+#   2   argument error / stub not yet implemented
+#   3   auth error
+#   124 timeout
+
+MODEL="gpt-5"
+WORKSPACE="$PWD"
+TIMEOUT=900
+PROMPT_FILE=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --prompt-file) PROMPT_FILE="$2"; shift 2 ;;
+    --model)       MODEL="$2"; shift 2 ;;
+    --workspace)   WORKSPACE="$2"; shift 2 ;;
+    --timeout)     TIMEOUT="$2"; shift 2 ;;
+    --output-format) shift 2 ;;  # accepted for cross-backend compatibility, ignored
+    --mode)          shift 2 ;;  # accepted for cross-backend compatibility, ignored
+    --resume)        shift 2 ;;  # accepted for cross-backend compatibility, ignored
+    -h|--help)
+      sed -n '3,22p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0 ;;
+    *) echo "codex: unknown arg: $1" >&2; exit 2 ;;
+  esac
+done
+
+if [[ -z "$PROMPT_FILE" ]]; then
+  echo "codex: --prompt-file is required" >&2
+  exit 2
+fi
+if [[ ! -f "$PROMPT_FILE" ]]; then
+  echo "codex: prompt file not found: $PROMPT_FILE" >&2
+  exit 2
+fi
+
+if ! command -v codex &>/dev/null; then
+  echo "codex: codex CLI not found on PATH (install: https://github.com/openai/codex)" >&2
+  exit 2
+fi
+
+WORKDIR=$(mktemp -d -t codex-run.XXXXXX)
+echo "WORKDIR=$WORKDIR"
+
+# STUB implementation — replace with verified Codex CLI invocation.
+# Best-guess shape based on typical OpenAI batch CLIs:
+PROMPT="$(cat "$PROMPT_FILE")"
+EXIT_CODE=0
+timeout "$TIMEOUT" codex exec --model "$MODEL" --cd "$WORKSPACE" "$PROMPT" \
+  >"$WORKDIR/output.raw" 2>"$WORKDIR/stderr.txt" || EXIT_CODE=$?
+
+if [[ $EXIT_CODE -eq 124 ]]; then
+  echo "codex: timed out after ${TIMEOUT}s" >&2
+  exit 124
+fi
+
+if [[ $EXIT_CODE -ne 0 ]]; then
+  if grep -qE "OPENAI_API_KEY|unauthorized|authentication|login" "$WORKDIR/stderr.txt" 2>/dev/null; then
+    echo "codex: auth failed. Run 'codex login' or set OPENAI_API_KEY" >&2
+    echo "stderr: $WORKDIR/stderr.txt" >&2
+    exit 3
+  fi
+  echo "codex: codex exited $EXIT_CODE" >&2
+  echo "stderr: $WORKDIR/stderr.txt" >&2
+  echo "NOTE: this backend is a stub. If the CLI shape is wrong, fix it here." >&2
+  exit 1
+fi
+
+# For now treat raw output as the reply. When Codex emits structured JSON,
+# extract the message content the way cursor-run extracts .result.
+cp "$WORKDIR/output.raw" "$WORKDIR/reply.txt"
+
+exit 0

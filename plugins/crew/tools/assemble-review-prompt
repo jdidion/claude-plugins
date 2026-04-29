@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Assemble a code-review prompt package for cursor-run / the Claude reviewer agent.
+"""Assemble a code-review prompt package for a backend script / the Claude reviewer agent.
 
 Creates a workdir containing:
   instructions.md  - review template + codebase-access and review-rules boilerplate
@@ -7,8 +7,8 @@ Creates a workdir containing:
   diff.txt         - copy of the provided diff
   prompt.md        - short model-facing prompt that references the other files
 
-Prints the workdir path to stdout (one line). Pass the workdir to cursor-run:
-  cursor-run --prompt-file <workdir>/prompt.md --workspace <repo-root>
+Prints the workdir path to stdout (one line). Pass the workdir to a backend:
+  backends/<name> --prompt-file <workdir>/prompt.md --workspace <repo-root>
 
 Exit codes: 0 ok, 2 argument error.
 

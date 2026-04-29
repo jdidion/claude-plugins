@@ -27,22 +27,52 @@ All three use the same reviewer roster, the same prompt assembly, and the same m
 
 ## Backend routing
 
-All non-Claude models go through Cursor (`${CLAUDE_PLUGIN_ROOT}/tools/cursor-run`). Cursor hosts GPT, Gemini, Grok, and Claude models under one enterprise subscription, so the skill only needs one external backend to hit multiple model families.
+Non-Claude models run through pluggable backend scripts under `${CLAUDE_PLUGIN_ROOT}/tools/backends/`. Each implements the same interface:
 
-| Reviewer | Backend |
-|---|---|
-| Claude | `code-reviewer` agent (no external CLI) |
-| Everything else (`gpt-*`, `gemini-*`, `grok-*`, `claude-*`, …) | `${CLAUDE_PLUGIN_ROOT}/tools/cursor-run` |
+```
+<backend> --prompt-file <path> [--model <id>] [--workspace <path>]
+```
 
-Default roster when no models are specified:
+Prints `WORKDIR=<path>` on stdout and writes `reply.txt` inside the workdir.
 
-1. **Claude** — via the `code-reviewer` agent.
-2. **`gpt-5`** — via Cursor.
-3. **`gemini-3.1-pro`** — via Cursor.
+**Per-model routing** is decided by `${CLAUDE_PLUGIN_ROOT}/tools/resolve-backend <model-id>`, which prints the absolute path to the backend that handles that model. Resolution order:
 
-Three different families, one external transport.
+1. User config at `~/.config/crew/config.toml` under `[model_routing]` (glob patterns, first match wins)
+2. Built-in prefix table: `gpt-*` → codex→cursor, `gemini-*` → gemini→cursor, `grok-*` → cursor, `claude-*` → anthropic-api→cursor, `llama*`/`mistral*`/`qwen*` → ollama
+3. Fallback to `cursor` if installed (broad model support via Cursor's gateway)
 
-> **Roadmap note:** OpenAI models are landing on AWS Bedrock. Once available, the skill will route GPT natively (no Cursor hop). Until then, Cursor is the sanctioned path for GPT.
+The resolver picks the first backend in each list whose CLI is on PATH. Users get correct behavior without configuration as long as they have at least one relevant CLI installed.
+
+### Shipped backends
+
+| Backend | Status | Required binary |
+|---|---|---|
+| `cursor` | Full | `cursor-agent` |
+| `codex` | Stub (CLI shape unverified) | `codex` |
+
+Additional backends (`gemini`, `ollama`, `anthropic-api`) are tracked as issues. Any file in `tools/backends/` that honors the interface contract works — no plugin-side change required.
+
+### Default roster
+
+Run `resolve-backend --defaults` to get the default model list:
+
+1. **Claude** — via the `code-reviewer` agent (no external backend).
+2. **`gpt-5`** — routed by the resolver.
+3. **`gemini-3.1-pro`** — routed by the resolver.
+
+Override via config:
+```toml
+[defaults]
+roster = ["claude", "gpt-5.1", "gemini-3.2-pro"]
+```
+
+Per-invocation override:
+```
+/crew:review with gpt-5 and gemini-3.1-pro
+/crew:review with only gpt-5
+```
+
+If the user asks for a model no installed backend can handle, stop and tell them. Use `resolve-backend --list-available` to name the installed backends.
 
 ## State file (incremental mode)
 
@@ -162,26 +192,42 @@ ${CLAUDE_PLUGIN_ROOT}/tools/assemble-review-prompt \
 
 Capture the printed workdir as `PROMPT_DIR`.
 
-### 4. Adapt the repo for Cursor (if any Cursor models are in the roster)
+### 4. Resolve each model to a backend; adapt the repo if needed
+
+For every non-Claude model in the roster, resolve the backend script:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/tools/cursor-adapt setup --repo-root "$REPO_ROOT"
+for model in <roster>; do
+    [ "$model" = "claude" ] && continue
+    BACKEND=$(${CLAUDE_PLUGIN_ROOT}/tools/resolve-backend "$model")
+    # Record (model, backend) pairs for Step 5.
+done
 ```
 
-Idempotent; tracks what it creates so cleanup only removes what setup added.
+If any resolved backend is the cursor script, run the cursor adapter first (it creates an `AGENTS.md` symlink and translates `.mcp.json`):
+
+```bash
+if [ <any backend ends in /cursor> ]; then
+    ${CLAUDE_PLUGIN_ROOT}/tools/cursor-adapt setup --repo-root "$REPO_ROOT"
+fi
+```
+
+The adapter is idempotent and tracks what it creates so cleanup only removes what setup added. Other backends don't need adaptation.
 
 ### 5. Launch external models in parallel (background)
 
-Each external model goes through `cursor-run`:
+For each resolved `(model, backend)` pair, invoke the backend:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/tools/cursor-run \
+"$BACKEND" \
   --prompt-file "$PROMPT_DIR/prompt.md" \
-  --model <cursor-model-id> \
+  --model "$model" \
   --workspace "$REPO_ROOT"
 ```
 
-Each invocation prints `WORKDIR=<path>` on stdout. Save the workdirs; read `<workdir>/reply.txt` later.
+Each invocation prints `WORKDIR=<path>` on stdout. Save the workdirs; read `<workdir>/reply.txt` later. All backends implement the same interface — the skill does not need per-backend branching.
+
+Report the backend each model used in the header of the final output so the user can audit routing (e.g. `gpt-5 → codex, gemini-3.1-pro → cursor`).
 
 ### 6. Run Claude's review in parallel
 
