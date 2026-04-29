@@ -33,19 +33,22 @@ This applies to: Slack messages via the `p` verdict, auto-generated topic summar
 Use these instead of inline Python — they handle OAuth, parsing, and batch operations:
 
 ```bash
-# Find the right Python (pixi's python3 may lack deps)
-eval "$(bash scripts/find-python.sh)"
+# Scripts use `#!/usr/bin/env python3`. `bash scripts/setup.sh` symlinks
+# the discovered python into ~/.curaitor/bin/python3 and adds that dir to
+# PATH, so plain `python3 scripts/…` works without an eval wrapper.
+# If PATH isn't set up, fall back to: eval "$(bash scripts/find-python.sh)"
+# then use $CURAITOR_PYTHON in place of python3.
 
 # Instapaper API
-$CURAITOR_PYTHON scripts/instapaper.py list [--limit N] [--folder archive]
-$CURAITOR_PYTHON scripts/instapaper.py text BOOKMARK_ID
-$CURAITOR_PYTHON scripts/instapaper.py archive ID [ID ...]
+python3 scripts/instapaper.py list [--limit N] [--folder archive]
+python3 scripts/instapaper.py text BOOKMARK_ID
+python3 scripts/instapaper.py archive ID [ID ...]
 
 # RSS feeds
-$CURAITOR_PYTHON scripts/feeds.py [--days N] [--category CAT]
+python3 scripts/feeds.py [--days N] [--category CAT]
 
 # Batch write Obsidian notes (faster than individual MCP calls for >10 notes)
-echo '[{"path":"Curaitor/Inbox/title.md","frontmatter":{...},"content":"..."}]' | $CURAITOR_PYTHON scripts/write-notes.py
+echo '[{"path":"Curaitor/Inbox/title.md","frontmatter":{...},"content":"..."}]' | python3 scripts/write-notes.py
 
 # Pre-fetch article data for review (zero tokens — reads vault directly)
 python3 scripts/prefetch-review.py review --include-meta    # Review queue
