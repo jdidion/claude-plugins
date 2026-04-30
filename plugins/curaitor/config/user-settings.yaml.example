@@ -57,3 +57,22 @@ local_triage:
 # Optional: custom command to run on `b` (bookmark) verdict.
 # If unset, bookmarks are written to `vault_paths.bookmarks` in Obsidian.
 # bookmark_command: "curl -s -X POST 'https://api.raindrop.io/rest/v1/raindrop' -H 'Authorization: Bearer $RAINDROP_TOKEN' -H 'Content-Type: application/json' -d '{\"link\": \"$URL\", \"title\": \"$TITLE\"}'"
+
+# Optional: request full text of paywalled papers via an institutional library
+# service. Surfaces as a `g` (get-paper) verdict in /cu:read and /cu:review when
+# the article URL looks like a paywalled journal paper (DOI, nature.com,
+# sciencedirect.com, wiley.com, cell.com, jamanetwork.com, nejm.org, etc.).
+# Leave this block absent (or set enabled: false) to hide the verdict.
+#
+# Template variables for body_template: {title}, {authors}, {journal},
+# {volume}, {year}, {url}, {citation}. {citation} expands to
+# `Authors. "Title." Journal, Volume (Year).` with missing pieces dropped.
+# paper_request:
+#   enabled: true
+#   method: email
+#   email: libraryrequests@example.com
+#   subject: "paper request"
+#   body_template: |
+#     {citation}
+#
+#     {url}

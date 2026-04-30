@@ -224,14 +224,16 @@ Do NOT use AskUserQuestion — it only supports 4 options max. Instead, print th
 **CRITICAL: Always print ALL menu items.** Never abbreviate or truncate the menu. Conditional items: `c` (only when repo/tool detected), `r` (only for publications — DOI, bioRxiv, arXiv, journal articles). Every other item MUST always appear:
 
 ```
-d:deep-read  y:inbox  t:topic  c:clip  b:bookmark  r:zotero  p:post  n:recycle  skip  q:quit
+d:deep-read  y:inbox  t:topic  c:clip  b:bookmark  r:zotero  g:get-paper  p:post  n:recycle  skip  q:quit
 ```
+
+**`g:get-paper` is conditional**: only show when the URL looks like a paywalled journal paper (DOI, nature.com, sciencedirect.com, wiley.com, cell.com, onlinelibrary.wiley.com, jamanetwork.com, nejm.org, academic.oup.com, tandfonline.com, springer.com, link.springer.com) AND the fetched content indicates a paywall (401/403, "subscribe to continue", truncated abstract-only content). Omit if `config/user-settings.yaml:paper_request.enabled` is false or the block is absent.
 
 **Topic suggestion**: Replace `t:topic` with a specific suggestion like `t:Variant Calling Methods` whenever possible. Infer from the article's tags, content, and matching existing topics. Only fall back to bare `t:topic` if no reasonable topic can be inferred.
 
 The user can type:
 - **`.`** (period) — accept "My suggestion" as the verdict (`.` is used instead of Enter because Claude Code's harness swallows empty prompts before they reach the agent)
-- A bare key: `y`, `n`, `c`, `r`, `skip`, `q`
+- A bare key: `y`, `n`, `c`, `r`, `g` (if paper_request enabled and URL is paywalled), `skip`, `q`
 - **Bare `t`** — if a topic was suggested in the menu (e.g., `t:Variant Calling`), use that topic directly. Only ask which topic if no suggestion was shown or the user types `t <different topic>`.
 - **`tl`** — list all available topics with numbers, then let the user pick by number or name. Example:
   ```
@@ -280,6 +282,7 @@ The user can type:
     --category "$CATEGORY" --description "$DESCRIPTION"
   ```
 - **r** → save to Zotero via API, move to `Curaitor/Inbox/`, add zotero_key to frontmatter. **True positive**.
+- **g** → **Get paper**: invoke the `/cu:request-paper` flow with the current article's metadata (title, authors, journal, URL). Do NOT change the article's folder or verdict — the user still owes a real decision after. Re-show the verdict menu for the same article so they can choose `r`/`y`/`t`/`skip` once they know the library is fetching it. Does not count as TP or FP yet — signal is deferred to the follow-up verdict.
 - **p** → **Post to Slack** (see Post flow below), then recycle the article. **True positive**.
 - **n** → **Recycle**: the user has reviewed this and doesn't want to keep it. Signal depends on engagement (see below):
   - **If the user asked at least one question about this article OR requested more detail before giving `n`** → **engaged TP**: triage was right to surface it for attention, even though the user chose not to keep it. Record with `engaged: true` in the rolling_window entry.
