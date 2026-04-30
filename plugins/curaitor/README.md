@@ -177,7 +177,7 @@ For isolated Claude sessions between interactive and unattended modes:
 bash scripts/setup.sh both
 ```
 
-This creates `workspace directories with symlinked commands and local credentials. See `scripts/setup.sh` for details.
+This creates workspace directories with symlinked skills and local credentials. See `scripts/setup.sh` for details.
 
 ---
 
@@ -371,14 +371,18 @@ into Feedly in cmux browser and pulling it from
 
 ```
 curaitor/
+├── .claude-plugin/plugin.json      # Plugin manifest
 ├── CLAUDE.md                       # Plugin context for Claude
-├── .claude/commands/               # Slash commands (cu:*)
-│   ├── cu:triage.md
-│   ├── cu:discover.md
-│   ├── cu:review.md
-│   ├── cu:read.md
-│   ├── cu:review-ignored.md
-│   └── cu:seed-preferences.md
+├── skills/                         # Slash skills (/cu:*)
+│   ├── cu:triage/SKILL.md
+│   ├── cu:discover/SKILL.md
+│   ├── cu:review/SKILL.md
+│   ├── cu:read/SKILL.md
+│   ├── cu:review-ignored/SKILL.md
+│   ├── cu:status/SKILL.md
+│   ├── cu:dashboard/SKILL.md
+│   ├── cu:request-paper/SKILL.md
+│   └── cu:seed-preferences/SKILL.md
 ├── config/
 │   ├── feeds.yaml                  # Your RSS feeds (gitignored)
 │   ├── feeds.yaml.example          # Feed format example

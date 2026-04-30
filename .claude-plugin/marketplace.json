@@ -62,6 +62,15 @@
       "author": { "name": "John Didion" },
       "license": "MIT",
       "keywords": ["review", "code-review", "multi-model", "multi-provider", "cursor", "gitlab", "github"]
+    },
+    {
+      "name": "curaitor",
+      "source": "./plugins/curaitor",
+      "description": "AI-powered article discovery, triage, and interactive review. Pulls from Instapaper and RSS, routes articles into Obsidian (Inbox/Review/Ignored) by learned preferences, and runs interactive review/read sessions in cmux browser.",
+      "version": "0.3.0",
+      "author": { "name": "John Didion" },
+      "license": "MIT",
+      "keywords": ["reading", "curation", "triage", "instapaper", "rss", "obsidian", "zotero", "cmux"]
     }
   ]
 }
