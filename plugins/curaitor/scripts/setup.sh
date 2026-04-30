@@ -147,16 +147,29 @@ setup_workspace() {
 
     echo ""
     echo "  Setting up curaitor-$name..."
-    mkdir -p "$dir/.claude/commands"
+    mkdir -p "$dir/.claude/skills"
 
-    # Symlink all commands
-    for f in "$CURAITOR_DIR/.claude/commands"/cu:*.md; do
-        local base=$(basename "$f")
-        local target="$dir/.claude/commands/$base"
+    # Clean up the stale pre-skills layout: older setup.sh versions linked
+    # $CURAITOR_DIR/.claude/commands/cu:*.md into $dir/.claude/commands/. That
+    # source directory no longer exists, so any surviving symlinks are broken.
+    if [ -d "$dir/.claude/commands" ]; then
+        find "$dir/.claude/commands" -maxdepth 1 -name 'cu:*' -type l -delete 2>/dev/null || true
+        # Remove empty commands dir so it doesn't confuse future runs
+        rmdir "$dir/.claude/commands" 2>/dev/null || true
+    fi
+
+    # Symlink each skill directory (plugin layout: skills/cu:NAME/SKILL.md)
+    for skill_dir in "$CURAITOR_DIR/skills"/cu:*; do
+        [ -d "$skill_dir" ] || continue
+        local base=$(basename "$skill_dir")
+        local target="$dir/.claude/skills/$base"
         if [ -L "$target" ]; then
             rm "$target"
+        elif [ -e "$target" ]; then
+            echo "  WARNING: $target exists and is not a symlink; skipping"
+            continue
         fi
-        ln -s "$f" "$target"
+        ln -s "$skill_dir" "$target"
     done
 
     # Copy .env if not present
@@ -187,8 +200,8 @@ REVIEW_EOF
         fi
     fi
 
-    local count=$(ls "$dir/.claude/commands"/cu:*.md 2>/dev/null | wc -l | tr -d ' ')
-    echo "  $count commands linked"
+    local count=$(find "$dir/.claude/skills" -maxdepth 1 -name 'cu:*' -type l 2>/dev/null | wc -l | tr -d ' ')
+    echo "  $count skills linked"
 }
 
 if [ "$MODE" = "review" ] || [ "$MODE" = "both" ]; then
