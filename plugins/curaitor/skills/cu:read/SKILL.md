@@ -172,8 +172,10 @@ Continue until the user signals they're done by typing a verdict key or "done".
 After the discussion (or if the user gives a verdict at any point), print:
 
 ```
-r:zotero  t:topic  c:clip  b:bookmark  p:post  n:recycle  skip  q:quit
+r:zotero  t:topic  c:clip  b:bookmark  g:get-paper  p:post  n:recycle  skip  q:quit
 ```
+
+**`g:get-paper` is conditional**: only show it when the URL looks like a paywalled journal paper (DOI, nature.com, sciencedirect.com, wiley.com, cell.com, onlinelibrary.wiley.com, jamanetwork.com, nejm.org, academic.oup.com, tandfonline.com, springer.com link.springer.com) AND the article was not successfully fetched (WebFetch returned a paywall wall, 401/403, or the snapshot shows "subscribe to continue"). Omit the key if `config/user-settings.yaml:paper_request.enabled` is false or the block is missing.
 
 **Topic suggestion**: Replace `t:topic` with a specific suggestion like `t:Variant Calling Methods` whenever possible. Infer from the article's tags, content, and matching existing topics.
 
@@ -184,6 +186,7 @@ The user can type:
 - **`tl`** — list all available topics with numbers, then let the user pick by number or name
 - **t Topic Name** — Attach to a specific topic (existing or new), remove from Inbox
 - **c** — Clip: star GitHub repo + add to Tools & Projects catalog, remove from Inbox (for tools/libraries)
+- **g** — **Get paper** (paywalled papers only) — draft a library-request email via `/cu:request-paper`, stay on this article, re-prompt for a real verdict after
 - **p** — Post to Slack, then archive (same flow as `/cu:review` post — prompt for channel, draft message, send)
 - **n** — Recycle: read it, not keeping. Appends via the dedup-safe helper (see §h for command). This is NOT a triage quality signal — triage correctly put it in Inbox.
 - **skip** — Leave in Inbox, move to next article
@@ -212,6 +215,7 @@ The user can type:
     --url "$URL" --title "$TITLE" --catalog "Bookmarks.md" \
     --category "$CATEGORY" --description "$DESCRIPTION"
   ```
+- **g** → **Get paper**: invoke the `/cu:request-paper` flow with the current article's metadata (title, authors, journal, URL). Do NOT delete the Inbox note — the user still owes a real verdict after the request is sent. After the compose window is open, re-show the verdict menu so the session continues on the same article.
 - **p** → **Post to Slack**: same flow as `/cu:review` — prompt for channel (default from `config/user-settings.yaml`), draft message, present for editing, send via `mcp__slack-mcp__send_slack_message`, then archive with reason "Posted to Slack #{channel}". Delete from `Curaitor/Inbox/`.
 - **n** → **Recycle**: append via the dedup-safe helper (never `mcp__obsidian__write_note --mode append` directly):
    ```bash

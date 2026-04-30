@@ -1,10 +1,26 @@
 # /cu:request-paper — Request full text of a paywalled paper
 
-Request a paywalled paper via an institutional library service. This is a human-powered service — use sparingly.
+Request a paywalled paper via an institutional library service. This is a human-powered service — use sparingly. The skill is also invoked automatically by the `g` (get-paper) verdict in `/cu:read` and `/cu:review`.
 
-## Setup
+## Configuration
 
-Set `LIBRARY_REQUEST_EMAIL` in your environment (or `.env`) to the address of your institution's library request inbox. If unset, the skill will prompt you for the address before composing.
+The target address and template live in `config/user-settings.yaml` under `paper_request`. If that block is absent, the skill falls back to the `LIBRARY_REQUEST_EMAIL` environment variable, and finally prompts the user.
+
+```yaml
+paper_request:
+  enabled: true                          # set false to hide the g verdict
+  method: email                          # only "email" is supported today
+  email: libraryrequests@example.com     # institutional library inbox
+  subject: "paper request"               # fixed subject; citation goes in body
+  # Optional template. Variables: {title}, {authors}, {journal}, {volume}, {year}, {url}
+  # Default template is used if omitted.
+  body_template: |
+    {citation}
+
+    {url}
+```
+
+`{citation}` expands to `Authors. "Title." Journal, Volume (Year).` — whatever fields are available. Missing fields are dropped gracefully.
 
 ## Arguments
 
@@ -26,7 +42,17 @@ Before requesting, check if a free version exists:
 
 If found, tell the user and skip the request.
 
-## Step 2: Compose the request
+## Step 2: Resolve the target address
+
+Resolve in this order and stop at the first hit:
+
+1. `config/user-settings.yaml:paper_request.email` (preferred)
+2. `LIBRARY_REQUEST_EMAIL` environment variable
+3. Prompt the user and, if they want it saved, offer to append a `paper_request` block to `config/user-settings.yaml`.
+
+If `paper_request.enabled` is explicitly `false`, tell the user the feature is disabled and stop.
+
+## Step 3: Compose the request
 
 Extract from the URL or user input:
 - **Title** of the paper
@@ -34,34 +60,40 @@ Extract from the URL or user input:
 - **Journal** and volume/year
 - **URL** (DOI or publisher link)
 
-## Step 3: Ask for permission
+Render the body using `paper_request.body_template` if set, otherwise the default:
+
+```
+{citation}
+
+{url}
+```
+
+Subject is `paper_request.subject` if set, otherwise `"paper request"`.
+
+## Step 4: Ask for permission
 
 Present the draft email:
 
 ```
-To: ${LIBRARY_REQUEST_EMAIL}
-Subject: Library request: {Title}
+To: {email}
+Subject: {subject}
 
-Hi, could you please obtain a copy of:
-
-{Authors}. "{Title}." {Journal}, {Volume} ({Year}).
-{URL}
-
-Thank you!
+{body}
 ```
 
 Then ask: **"Send this request? (This is a human-powered service — confirming before sending.)"**
 
-## Step 4: Send
+## Step 5: Send
 
 Only after explicit approval. Open Gmail compose via:
+
 ```bash
-cmux browser open "https://mail.google.com/mail/?view=cm&to=${LIBRARY_REQUEST_EMAIL}&su={encoded_subject}&body={encoded_body}"
+cmux browser open "https://mail.google.com/mail/?view=cm&to={email}&su={encoded_subject}&body={encoded_body}"
 ```
 
 Tell the user the compose window is open and they need to click Send.
 
-## Step 5: Track
+## Step 6: Track
 
 Add a note to the article's Obsidian note or Zotero entry:
 ```
@@ -71,4 +103,4 @@ Library request sent: YYYY-MM-DD
 ## Notes
 - The library team typically responds within 1-2 business days
 - Papers are usually added to an institutional reference library and a link is provided
-- Previous requests: search Gmail for `from:${LIBRARY_REQUEST_EMAIL}` or `to:${LIBRARY_REQUEST_EMAIL}`
+- Previous requests: search Gmail for `from:{email}` or `to:{email}`

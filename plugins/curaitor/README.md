@@ -54,6 +54,7 @@ curaitor learns your interests over time. Every time you give feedback during `/
 | `c` | **Clip** — add repo/tool to Tools & Projects catalog, delete article |
 | `b` | **Bookmark** — save link to `Bookmarks.md` (or custom command), delete article |
 | `r` | Save to Zotero as reference |
+| `g` | **Get paper** — email library service for the full text of a paywalled paper (see `paper_request` in `user-settings.yaml`) |
 | `n` | **Recycle** — not keeping. Appended to `Curaitor/Recycle.md`, note deleted. |
 | `skip` | Leave in Curaitor/Review/ for later |
 | `q` | Quit review session |
@@ -68,6 +69,7 @@ Inline commands: `d compare to our pipeline`, just type the question, e.g. `does
 | `t` | Attach to a topic |
 | `c` | Clip tool to Tools & Projects catalog |
 | `b` | Bookmark link to `Bookmarks.md` (or custom command) |
+| `g` | **Get paper** — email library service for the full text (paywalled papers only) |
 | `n` | **Recycle** — not keeping. Appended to `Curaitor/Recycle.md`, note deleted. |
 | `skip` | Leave in Inbox |
 | `q` | Quit |
