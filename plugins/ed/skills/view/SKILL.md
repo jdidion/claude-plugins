@@ -95,7 +95,13 @@ ws_surfaces() {
         | sort -u
 }
 
-ORIENT="${ED_MONITOR:-${CURAITOR_MONITOR:-horizontal}}"
+if [ -n "$ED_MONITOR" ]; then
+    ORIENT="$ED_MONITOR"
+elif [ -n "$CURAITOR_MONITOR" ]; then
+    ORIENT="$CURAITOR_MONITOR"
+else
+    ORIENT=$(python3 "$CLAUDE_PLUGIN_ROOT/scripts/detect_orientation.py" 2>/dev/null || echo horizontal)
+fi
 if [ "$ORIENT" = "vertical" ]; then
     VIEWER_DIR=down
 else

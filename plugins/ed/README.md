@@ -154,12 +154,20 @@ viewer_live = "bash -c 'while :; do clear; glow \"$1\"; sleep 1; done' --"
 
 Override any of these in `[editors.<bin>]` in your config.
 
+### Orientation auto-detection
+
+On macOS, when neither `ED_MONITOR` nor `CURAITOR_MONITOR` is set, the plugin runs `system_profiler -json SPDisplaysDataType` and picks `vertical` if any external display is attached, otherwise `horizontal`. The assumption: when you're docked at a desk you want the panes stacked; when you're on the laptop alone you want them side-by-side.
+
+Known limitation: `system_profiler` doesn't say *which* display cmux is on. If you dock but keep the built-in panel as primary and park cmux there, detection still returns `vertical`. Set `ED_MONITOR=horizontal` to override.
+
+Fails open to `horizontal` on non-Darwin or any detection error. Takes ~300–400 ms cold; run once per skill invocation.
+
 ### Env vars
 
 | Var | Effect |
 |---|---|
-| `ED_MONITOR` | `horizontal` (default) or `vertical`; flips the Claude↔ed split direction. |
-| `CURAITOR_MONITOR` | Fallback for `ED_MONITOR`. |
+| `ED_MONITOR` | `horizontal` or `vertical`. When set, wins over auto-detection. |
+| `CURAITOR_MONITOR` | Fallback for `ED_MONITOR` (auto-detection still runs if neither is set). |
 | `VISUAL`, `EDITOR` | Standard Unix editor fallbacks. |
 | `VIEWER`, `ED_DEFAULT_VIEWER` | Viewer fallbacks for `/ed:view`. |
 
