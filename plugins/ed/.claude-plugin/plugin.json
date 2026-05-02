@@ -1,8 +1,8 @@
 {
   "name": "ed",
-  "version": "0.6.0",
-  "description": "Edit or view a file in an adjacent cmux surface. /ed:edit opens the editor plus a hot-reload viewer pane (entr-wrapped automatically) when a viewer is configured for the file type. /ed:view opens a single viewer pane with editor-read-only fallback. Per-extension config at ~/.config/ed/config.toml.",
+  "version": "0.7.0",
+  "description": "Edit, view, or open a file from a cmux-hosted Claude Code session. /ed:edit opens the editor plus a hot-reload viewer pane (entr-wrapped automatically) when a viewer is configured for the file type. /ed:view opens a single terminal viewer pane with editor-read-only fallback. /ed:open hands the file to the OS default application (Preview, Keynote, etc.) — no terminal surface. Per-extension config at ~/.config/ed/config.toml.",
   "author": { "name": "John Didion" },
   "license": "MIT",
-  "keywords": ["editor", "viewer", "hx", "helix", "micro", "cmux", "markdown", "preview"]
+  "keywords": ["editor", "viewer", "hx", "helix", "micro", "cmux", "markdown", "preview", "open"]
 }

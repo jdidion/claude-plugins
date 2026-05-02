@@ -7,11 +7,12 @@ Open a file in your editor or viewer in a cmux terminal surface adjacent to the 
 ```
 /ed:edit [<editor>] [<path>] [<passthrough-flags>]
 /ed:view [<path>] [--live] [<passthrough-flags>]
+/ed:open [<path>] [--app <name>] [--reveal] [<passthrough-flags>]
 ```
 
-- `<path>` is optional; if omitted, the skill resolves to the most recently mentioned local file path in the conversation.
+- `<path>` is optional in all three; if omitted, the skill resolves to the most recently mentioned local file path in the conversation.
 - For `/ed:edit`, the first non-flag non-path token is treated as an editor command (e.g. `/ed:edit nano notes.md`). Shell word-splitting works, so `/ed:edit "emacs -nw" notes.md` is fine.
-- Remaining tokens are passed through verbatim to the editor / viewer.
+- Remaining tokens are passed through verbatim to the editor / viewer / opener.
 
 ## Behavior
 
@@ -34,6 +35,16 @@ Opens a single viewer pane. Resolution ladder:
 6. `less`
 
 If every step above fell through to `less` (i.e. nothing viewer-shaped is configured), `/ed:view` falls back to the editor in **read-only mode** using the editor's known read-only flag (e.g. `vi -R`, `micro -readonly true`). If the editor has no known read-only flag, it opens normally and prints a warning.
+
+### `/ed:open`
+
+Hands the file to the OS default application via `open` (macOS) or `xdg-open` (Linux). No terminal surface is created. Use for file types that don't terminal-render well — PDFs in Preview, .key in Keynote, images in the default image viewer, videos in QuickTime, etc.
+
+- `--app <name>` — macOS only. Force a specific app (e.g. `--app Preview`).
+- `--reveal` — macOS only. Highlight the file in Finder instead of opening it.
+- No hot-reload and no read-only fallback — the external app owns the file from here on.
+
+Rule of thumb: if you want a human to *look at* the file the way they normally would, use `/ed:open`. If you want a rendered terminal view (glow, csvlens, bat), use `/ed:view`.
 
 ## Layout
 
