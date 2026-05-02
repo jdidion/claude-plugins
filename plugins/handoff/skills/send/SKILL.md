@@ -55,15 +55,25 @@ Save it to e.g. `/tmp/handoff-body-<slug>.md`.
 
 ## Step 3: Wrap in Pod envelope and drop in inbox
 
+First, resolve the target — the user-supplied name may be an alias (e.g. `plugins`) or a canonical session ID. `registry.py resolve` turns either into the canonical session ID, which is the inbox directory name:
+
+```bash
+TARGET_ID=$(python3 $CLAUDE_PLUGIN_ROOT/scripts/registry.py resolve "<target-name>")
+# Also resolve self to a canonical ID so envelope `from` is stable.
+FROM_ID=$(python3 $CLAUDE_PLUGIN_ROOT/scripts/registry.py resolve "$(python3 $CLAUDE_PLUGIN_ROOT/scripts/registry.py whoami | awk '{print $NF}')" 2>/dev/null || echo unknown)
+```
+
+Then compile:
+
 ```bash
 python3 $CLAUDE_PLUGIN_ROOT/scripts/pod.py compile \
-  --from "$(python3 $CLAUDE_PLUGIN_ROOT/scripts/registry.py whoami)" \
-  --to "<target-name>" \
+  --from "$FROM_ID" \
+  --to "$TARGET_ID" \
   --slug "<kebab-case-slug>" \
   --body-file /tmp/handoff-body-<slug>.md
 ```
 
-This writes the pod to `~/.claude/handoffs/inbox/<target>/<ulid>-<slug>.md` with:
+This writes the pod to `~/.claude/handoffs/inbox/<target-session-id>/<ulid>-<slug>.md` with:
 - `pod.format: pod`, `pod.version: 1`, `pod.id: <ULID>`, `pod.createdAt`, `pod.from`, `pod.to`
 - `pod.payload.kind: handoff`, `pod.payload.version: 1`
 - `pod.fingerprint: sha256-<hex>` over the body bytes
