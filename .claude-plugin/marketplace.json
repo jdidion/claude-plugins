@@ -30,8 +30,8 @@
     {
       "name": "handoff",
       "source": "./plugins/handoff",
-      "description": "AirDrop-style context handoff and interactive team coordination for Claude Code sessions in cmux",
-      "version": "0.3.0",
+      "description": "AirDrop-style context handoff and interactive team coordination for Claude Code sessions in cmux. Sessions are keyed by Claude session ID and auto-registered on SessionStart; addressable via short aliases from the cmux workspace title.",
+      "version": "0.4.0",
       "author": { "name": "John Didion" },
       "license": "MIT",
       "keywords": ["handoff", "context", "multi-session", "cmux", "coordination", "teams", "messaging"]

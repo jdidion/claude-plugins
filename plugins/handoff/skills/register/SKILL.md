@@ -1,75 +1,102 @@
 ---
 name: register
-description: Register the current Claude Code session with a friendly name so other sessions can send handoffs to it. Use when the user asks to register this session, set session name, or make this discoverable for handoffs.
+description: Re-register the current Claude Code session or set/override its alias. This session is normally auto-registered on startup; use this skill to set an explicit alias when the automatic one from the cmux workspace title isn't what you want, or after modifying the registry manually. Canonical key is always the Claude session ID.
 ---
 
-# /handoff:register — Register this session for handoff discovery
+# /handoff:register — Register or re-register this session
 
-Register the current Claude Code session with a friendly name so other sessions can find and send handoffs to it.
+Sessions are keyed by the Claude **session ID** (a UUID), not a friendly name. The `SessionStart` hook auto-registers every session on startup, resume, and `/clear`, so this skill is rarely needed directly — reach for it when:
+
+- You want to set an explicit alias (override the workspace-title default).
+- The auto-register hook didn't fire (you disabled hooks, or session_id wasn't in the hook payload).
+- You want to force a refresh after manually editing `~/.claude/handoffs/registry.json`.
 
 ## Arguments
-$ARGUMENTS — Optional: friendly name for this session. If omitted, derives from the current working directory basename.
+`$ARGUMENTS` — optional `--alias <name>` to override the workspace-title alias.
 
-## Step 1: Determine session identity
+## Step 1: Determine the session ID
 
-Get the cmux surface and workspace refs:
+Claude Code exposes the session ID in hook payloads and via the internal session path. The simplest path is to pull it from the transcript filename that Claude is currently appending to:
+
+```bash
+# Find the most-recently-modified session jsonl file.
+SESSION_JSONL=$(ls -1t ~/.claude/projects/*/*.jsonl 2>/dev/null | head -1)
+SESSION_ID=$(basename "$SESSION_JSONL" .jsonl)
+```
+
+If that fails, ask the user — they can run `echo $CLAUDE_SESSION_ID` in a terminal started under the Claude hook environment, or paste the path from `/status`.
+
+## Step 2: Determine the cmux refs
+
 ```bash
 cmux identify --no-caller
 ```
 
-Determine a friendly name:
-- If the user provided one, use it
-- Otherwise, use the basename of the current working directory (e.g., `curaitor-review`, `sgnipt-research`)
+Extract `surface_ref` and `workspace_ref` from the `focused` object in the JSON output.
 
-The `from` and `to` fields in Pod envelopes are free-form strings — whatever name you register here is what other sessions will address you by.
-
-## Step 2: Register
+## Step 3: Register
 
 ```bash
-python3 $CLAUDE_PLUGIN_ROOT/scripts/registry.py register "<name>" "<surface_ref>" "<workspace_ref>"
+python3 $CLAUDE_PLUGIN_ROOT/scripts/registry.py register \
+  "$SESSION_ID" \
+  "<surface_ref>" \
+  "<workspace_ref>" \
+  ${ALIAS:+--alias "$ALIAS"}
 ```
 
-This writes to `~/.claude/handoffs/registry.json`:
+- The session is stored under `sessions["<session-id>"]`.
+- An alias is added automatically, derived from the cmux workspace title (slugified — "Plugins" → `plugins`, "Curaitor Review" → `curaitor-review`). An explicit `--alias <name>` wins over the auto-alias.
+- Any alias with the same name pointing at a different (typically dead) session is overwritten silently.
+- Dead sessions (whose PIDs no longer exist) are garbage-collected from the registry as a side effect.
+
+Registry schema:
+
 ```json
 {
   "sessions": {
-    "<name>": {
-      "surface": "surface:NN",
-      "workspace": "workspace:NN",
+    "<session-id>": {
+      "alias": "plugins",
+      "surface": "surface:1",
+      "workspace": "workspace:1",
       "cwd": "/path/to/project",
       "registered_at": "ISO-8601",
       "pid": 12345
     }
+  },
+  "aliases": {
+    "plugins": "<session-id>"
   }
 }
 ```
 
-## Step 3: Create inbox directory
+## Step 4: Create inbox directory
 
 ```bash
-mkdir -p ~/.claude/handoffs/inbox/<name>
+mkdir -p ~/.claude/handoffs/inbox/$SESSION_ID
 ```
 
-## Step 4: Confirm
+## Step 5: Confirm
 
 ```
-Registered as "<name>"
-  Surface: surface:NN
-  Workspace: workspace:NN
-  Inbox: ~/.claude/handoffs/inbox/<name>/
+Registered session <session-id>
+  Alias: plugins  (from cmux workspace title)
+  Surface: surface:1
+  Workspace: workspace:1
+  Inbox: ~/.claude/handoffs/inbox/<session-id>/
 
-Other sessions can now send handoffs with:
-  /handoff:send --to <name>
-
-Pods will land as ~/.claude/handoffs/inbox/<name>/<ulid>-<slug>.md
+Other sessions can send handoffs with:
+  /handoff:send --to plugins        (alias, preferred)
+  /handoff:send --to <session-id>   (canonical)
 ```
 
 ## Auto-registration
 
-This skill can also be triggered automatically via a SessionStart hook.
-The plugin ships with this hook enabled by default (see `hooks/hooks.json`).
+The plugin's `SessionStart` hook (see `hooks/hooks.json`) runs on every session event — startup, resume, and `/clear`. It reads the session ID from the hook payload and re-registers automatically. That means a `/clear` repoints your alias at the new session ID without any user action.
+
+The `SessionEnd` hook unregisters and cleans up bridge processes on exit.
 
 ## Rules
-- If the name is already registered, update it (session refs change between restarts)
-- Validate that the cmux surface actually exists before registering
-- If cmux is unavailable, register with name only (file-based handoff still works)
+- Canonical key is always the Claude session ID (UUID).
+- Aliases are free-form short names. The workspace-title slug is the default; `--alias <name>` overrides.
+- Re-registration is idempotent. Running twice with the same session ID and different alias rewrites the alias entry.
+- If cmux is unavailable, registration still succeeds with empty surface/workspace refs — file-based handoff still works via the inbox directory.
