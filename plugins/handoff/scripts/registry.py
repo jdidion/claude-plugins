@@ -172,12 +172,16 @@ def cmd_register(session_id, surface=None, workspace=None, alias=None):
         if title:
             final_alias = slugify(title) or None
 
+    # Prefer CMUX_CLAUDE_PID (the long-lived Claude process) over
+    # os.getppid(), which in hook contexts is the hook's bash wrapper
+    # that exits as soon as the hook returns — dead on arrival for GC.
+    pid = int(os.environ.get("CMUX_CLAUDE_PID") or os.getppid())
     reg["sessions"][session_id] = {
         "surface": surface,
         "workspace": workspace,
         "cwd": os.getcwd(),
         "registered_at": datetime.now(timezone.utc).isoformat(),
-        "pid": os.getppid(),
+        "pid": pid,
     }
 
     if final_alias:

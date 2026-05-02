@@ -163,12 +163,21 @@ cd $CURAITOR_DIR && claude -p "/cu:triage" --permission-mode bypassPermissions
 
 #### 7. Schedule (optional)
 
+Route cron entries through `scripts/cron-wrapper.sh`. The wrapper sets
+`CURAITOR_CRON=1` so the discover/triage skills enqueue articles to the
+level-2 pending queue *before* calling Claude — if the hosted model
+refuses or times out mid-run, the day's articles are recoverable on the
+next interactive `/cu:review` or `/cu:read` (which drains the queue via
+`scripts/cu:status/protocol.md` §Step 0). The wrapper also detects the
+classifier-refusal fingerprint and exits 0 so cron doesn't mark the run
+as failed.
+
 ```bash
 # Triage Instapaper every 6 hours
-0 */6 * * * cd $CURAITOR_DIR && claude -p "/cu:triage" --permission-mode bypassPermissions >> ~/curaitor-triage.log 2>&1
+0 */6 * * * cd $CURAITOR_DIR && $CURAITOR_DIR/scripts/cron-wrapper.sh ~/curaitor-triage.log "/cu:triage"
 
 # Discover from feeds daily at 6am
-0 6 * * * cd $CURAITOR_DIR && claude -p "/cu:discover" --permission-mode bypassPermissions >> ~/curaitor-discover.log 2>&1
+0 6 * * * cd $CURAITOR_DIR && $CURAITOR_DIR/scripts/cron-wrapper.sh ~/curaitor-discover.log "/cu:discover"
 ```
 
 #### 8. Separate workspaces (optional)
