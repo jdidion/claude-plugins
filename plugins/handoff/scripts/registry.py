@@ -281,12 +281,26 @@ def cmd_inbox():
         # Fall back to cwd basename for pre-registration corner case.
         sid = os.path.basename(os.getcwd())
 
-    inbox_path = INBOX_DIR / sid
-    if not inbox_path.exists():
+    # Scan both the canonical session-id directory AND any alias
+    # directories pointing at this session. Senders running older
+    # versions of /handoff:send write pods to inbox/<alias>/ rather
+    # than inbox/<session-id>/ — this keeps those discoverable.
+    scan_paths = [INBOX_DIR / sid]
+    for alias, target in reg["aliases"].items():
+        if target == sid:
+            alt = INBOX_DIR / alias
+            if alt.exists() and alt != scan_paths[0]:
+                scan_paths.append(alt)
+
+    files = []
+    for p in scan_paths:
+        if p.exists():
+            files.extend(p.glob("*.md"))
+    files.sort(key=lambda f: f.name, reverse=True)
+
+    if not files:
         print("[]")
         return
-
-    files = sorted(inbox_path.glob("*.md"), reverse=True)
     seen = pod.SeenStore()
     items = []
     for f in files:
@@ -320,22 +334,37 @@ def cmd_inbox():
 
 
 def cmd_archive(name, filename=None):
-    """Archive pod files for a session. Name can be ID or alias."""
+    """Archive pod files for a session. Name can be ID or alias.
+
+    Searches both the canonical session-id inbox AND any alias inboxes
+    pointing at the session, so pods written by older /handoff:send
+    versions (which addressed the alias directly) are archivable.
+    """
     reg = load_registry()
     sid = resolve_name(name, reg) or name
-    inbox_path = INBOX_DIR / sid
     archive_path = ARCHIVE_DIR / sid
     archive_path.mkdir(parents=True, exist_ok=True)
 
+    # Build the set of inbox paths to drain.
+    inbox_paths = [INBOX_DIR / sid]
+    for alias, target in reg["aliases"].items():
+        if target == sid:
+            alt = INBOX_DIR / alias
+            if alt.exists() and alt not in inbox_paths:
+                inbox_paths.append(alt)
+
     if filename:
-        src = inbox_path / filename
-        if src.exists():
-            src.rename(archive_path / filename)
-            print(f"Archived: {filename}")
+        for inbox in inbox_paths:
+            src = inbox / filename
+            if src.exists():
+                src.rename(archive_path / filename)
+                print(f"Archived: {filename}")
+                return
     else:
-        for f in inbox_path.glob("*.md"):
-            f.rename(archive_path / f.name)
-            print(f"Archived: {f.name}")
+        for inbox in inbox_paths:
+            for f in inbox.glob("*.md"):
+                f.rename(archive_path / f.name)
+                print(f"Archived: {f.name}")
 
 
 def _parse_register_args(argv):
