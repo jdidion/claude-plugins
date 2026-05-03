@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# cron-wrapper.sh — wrap `claude -p /cu:<skill>` for cron so a classifier
-# refusal (stop_reason=refusal, emitted as "API Error: ...Usage Policy...")
-# is logged and acknowledged rather than left as a silent-tail failure.
+# cron-wrapper.sh — wrap `claude -p /cu:<skill>` for cron so failure modes
+# that would otherwise look like silent-tail "successful" runs are logged
+# and acknowledged instead.
 #
 # Usage:
 #   cron-wrapper.sh <log-path> <slash-command>
@@ -11,10 +11,15 @@
 # Behavior:
 #   - Runs `claude -p "<slash-command>" --permission-mode bypassPermissions`.
 #   - Captures combined stdout+stderr.
-#   - If the output matches the safety-refusal fingerprint, writes a compact
-#     "## Cron refusal" block to the log with timestamp + hint and exits 0
-#     so the cron line doesn't mark the run as failed.
-#   - Otherwise passes through the output and exit code.
+#   - Two fingerprint-matched failure modes get an annotated log block and
+#     exit 0 so cron doesn't surface them as run failures:
+#       * "API Error ... Usage Policy"  → "## Cron refusal" block (hosted
+#         classifier refused; the pre-Claude enqueue in the skills'
+#         Step 3.6/3.7 protects the articles).
+#       * "API Error ... Token is expired" (with optional preceding
+#         "AWS auth refresh timed out" lines) → "## Cron auth-expired" block
+#         (SSO session died and cron can't do interactive refresh).
+#   - Otherwise passes through output and exit code.
 
 set -o pipefail
 
@@ -58,6 +63,28 @@ if grep -qiE 'API Error.*Usage Policy' "$TMP"; then
     } >> "$LOG"
     # Intentionally exit 0 — this is an expected-failure mode, not a bug
     # in the cron invocation. The run is logged; next cycle will retry.
+    exit 0
+fi
+
+# SSO token expiry fingerprint: "API Error" + "Token is expired" in output.
+# Cron has no TTY for the interactive device-code refresh flow, so when the
+# SSO session dies the skill produces this error and exits 0. Without this
+# branch it looks like a healthy cron run that did zero work.
+if grep -qiE 'API Error.*Token is expired' "$TMP"; then
+    {
+        printf '\n'
+        printf '## Cron auth-expired at %s (skill=%s)\n' "$TS" "$SLASH"
+        printf 'The SSO session expired and cron cannot run the interactive\n'
+        printf 'refresh flow. Refresh the token in an interactive terminal:\n'
+        printf '  aws sso login --profile <profile>\n'
+        printf 'Then the next cron cycle will pick up where this one left off.\n'
+        printf 'Output:\n\n'
+        cat "$TMP"
+        printf '\n'
+    } >> "$LOG"
+    # Exit 0 — same rationale as the refusal branch above. This is an
+    # operational condition the user has to resolve manually; cron-level
+    # retry won't help.
     exit 0
 fi
 
