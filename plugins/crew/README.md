@@ -29,15 +29,15 @@ Three scopes, one command:
 Three reviewers by default:
 
 1. **Claude** — via the `code-reviewer` agent (no external CLI; uses whatever backend Claude Code is configured for — Bedrock, Anthropic API, etc.)
-2. **`gpt-5`** — routed to the best available backend
+2. **`gpt-5.2`** — routed to the best available backend
 3. **`gemini-3.1-pro`** — routed to the best available backend
 
 Override per-invocation:
 
 ```
-/crew:review with gpt-5 and grok-4-20-thinking
+/crew:review with gpt-5.2 and grok-4-20-thinking
 /crew:review --local with only gemini-3.1-pro
-/crew:review --mr 123 with claude-opus-4-7-thinking-high and gpt-5
+/crew:review --mr 123 with claude-opus-4-7-thinking-high and gpt-5.2
 ```
 
 Override defaults via `~/.config/crew/config.toml`:
@@ -91,7 +91,7 @@ All optional. `~/.config/crew/config.toml`:
 
 ```toml
 [defaults]
-roster = ["claude", "gpt-5", "gemini-3.1-pro"]
+roster = ["claude", "gpt-5.2", "gemini-3.1-pro"]
 
 [model_routing]
 "gpt-*" = "codex"              # explicit — codex only

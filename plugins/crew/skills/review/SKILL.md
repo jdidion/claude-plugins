@@ -21,7 +21,7 @@ All three use the same reviewer roster, the same prompt assembly, and the same m
   - `--local` — review local (staged + unstaged) changes only.
   - `--mr <N>` or `--pr <N>` — review the specified GitLab MR IID or GitHub PR number.
   - (no scope flag) — incremental default: diff since the last run (or whole repo on first run).
-- **Model overrides**: `with <model-a> and <model-b>`, or `with only <model>`. Names are Cursor model IDs (`gpt-5`, `gemini-3.1-pro`, `grok-4-20-thinking`, `claude-*`, etc.). Ambiguous names: run `cursor-agent models`, filter, and ask the user.
+- **Model overrides**: `with <model-a> and <model-b>`, or `with only <model>`. Names are Cursor model IDs (`gpt-5.2`, `gemini-3.1-pro`, `grok-4-20-thinking`, `claude-*`, etc.). Ambiguous names: run `cursor-agent models`, filter, and ask the user.
 - **`--deep`** — report every finding, all severities, no caps. Default caps at 10 findings, 3 suggestions, and hides cosmetic nits.
 - **Post-and-monitor intent** (MR/PR mode only) — natural-language phrasing like "post and monitor", "submit and watch", "publish and follow up". Parse by intent, not fixed keywords. Only valid when `--mr`/`--pr` is given.
 
@@ -57,7 +57,7 @@ Additional backends (`gemini`, `ollama`, `anthropic-api`) are tracked as issues.
 Run `resolve-backend --defaults` to get the default model list:
 
 1. **Claude** — via the `code-reviewer` agent (no external backend).
-2. **`gpt-5`** — routed by the resolver.
+2. **`gpt-5.2`** — routed by the resolver.
 3. **`gemini-3.1-pro`** — routed by the resolver.
 
 Override via config:
@@ -68,8 +68,8 @@ roster = ["claude", "gpt-5.1", "gemini-3.2-pro"]
 
 Per-invocation override:
 ```
-/crew:review with gpt-5 and gemini-3.1-pro
-/crew:review with only gpt-5
+/crew:review with gpt-5.2 and gemini-3.1-pro
+/crew:review with only gpt-5.2
 ```
 
 If the user asks for a model no installed backend can handle, stop and tell them. Use `resolve-backend --list-available` to name the installed backends.
@@ -227,7 +227,7 @@ For each resolved `(model, backend)` pair, invoke the backend:
 
 Each invocation prints `WORKDIR=<path>` on stdout. Save the workdirs; read `<workdir>/reply.txt` later. All backends implement the same interface — the skill does not need per-backend branching.
 
-Report the backend each model used in the header of the final output so the user can audit routing (e.g. `gpt-5 → codex, gemini-3.1-pro → cursor`).
+Report the backend each model used in the header of the final output so the user can audit routing (e.g. `gpt-5.2 → codex, gemini-3.1-pro → cursor`).
 
 ### 6. Run Claude's review in parallel
 
@@ -316,7 +316,7 @@ Then findings ordered `CRITICAL → WARNING → SUGGESTION` (plus `NIT` in `--de
    - GitLab: `gitlab_create_merge_request_discussion`, positioned on the relevant file and line when possible.
    - GitHub: `gh pr review --comment` with file+line, or an equivalent PR-review-comment MCP tool.
 3. For the summary: post as a general MR/PR note (not positioned on a file).
-4. Include the attribution tag (`[All]`, `[Claude+gpt-5]`, etc.) in each posted comment.
+4. Include the attribution tag (`[All]`, `[Claude+gpt-5.2]`, etc.) in each posted comment.
 5. Prefix every posted comment with 🤖.
 
 ### Monitor
