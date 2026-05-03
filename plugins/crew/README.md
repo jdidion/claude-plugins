@@ -14,6 +14,7 @@ This plugin is not a replacement for deterministic checks — it runs `lsp_diagn
 |---|---|---|
 | `/crew:review` | Hub-spoke | Multi-provider code review with attribution. Incremental / local / MR / PR scopes. Optional post-and-monitor on MR/PR. |
 | `/crew:market` | Market | Run N independent agents on the same prompt; deterministic oracle or Haiku LLM picks winner. Text-only; no file-modification mode yet. |
+| `/crew:do` | Router | Auto-pick the right topology from the task shape (solo / market / hub-spoke). Experimental — heuristic classifier, `--topology <choice>` override always wins. |
 
 ### `/crew:review` scopes
 
@@ -29,6 +30,15 @@ This plugin is not a replacement for deterministic checks — it runs `lsp_diagn
 ```
 
 Reach for `/crew:market` when the task is brittle reasoning with a cheap correctness signal (tests pass, schema valid, exact-string match). Avoid for long-horizon coding with global state — use `/crew:review` or a single agent there. See `skills/market/SKILL.md` for the full rules.
+
+### `/crew:do` usage
+
+```
+/crew:do "<task>" [--topology auto|solo|market|hub-spoke|hybrid]
+                  [--n 3] [--models ...] [--judge ...] [--deterministic ...]
+```
+
+`--topology auto` (default) runs a cheap classifier on the task and picks. Explicit `--topology <choice>` always wins. Currently dispatches solo and market directly; hub-spoke tasks are advised back to `/crew:review`; hybrid is not implemented (falls back with a warning). See `skills/do/SKILL.md` for the decision table and classifier prompt.
 
 ## Agent
 
