@@ -8,17 +8,37 @@ Same-context self-review suffers from choice-supportive bias — once a model se
 
 This plugin is not a replacement for deterministic checks — it runs `lsp_diagnostics` and `ast_grep` pre-gates before any LLM review, and encourages project-specific review templates in `.ci/ai-review/`.
 
-## Skill
+## Skills
 
-| Skill | Trigger | What it does |
+| Skill | Topology | What it does |
 |---|---|---|
-| `/crew:review` | User asks for review, with optional `--local` / `--mr N` / `--pr N` scope | One command; defaults to incremental review of commits since last run on this branch. With explicit post-and-monitor intent on an MR/PR, posts attributed comments and watches for author responses. Never posts in default mode. |
+| `/crew:review` | Hub-spoke | Multi-provider code review with attribution. Incremental / local / MR / PR scopes. Optional post-and-monitor on MR/PR. |
+| `/crew:market` | Market | Run N independent agents on the same prompt; deterministic oracle or Haiku LLM picks winner. Text-only; no file-modification mode yet. |
+| `/crew:do` | Router | Auto-pick the right topology from the task shape (solo / market / hub-spoke). Experimental — heuristic classifier, `--topology <choice>` override always wins. |
 
-Three scopes, one command:
+### `/crew:review` scopes
 
 - `/crew:review` — incremental (commits since last run; whole repo on first run)
 - `/crew:review --local` — staged + unstaged changes only
 - `/crew:review --mr 123` or `/crew:review --pr 123` — a specific GitLab MR / GitHub PR
+
+### `/crew:market` usage
+
+```
+/crew:market "<task>" [--n 3] [--models claude,gpt-5.2,gemini-3.1-pro]
+                      [--judge haiku] [--deterministic "<cmd>"]
+```
+
+Reach for `/crew:market` when the task is brittle reasoning with a cheap correctness signal (tests pass, schema valid, exact-string match). Avoid for long-horizon coding with global state — use `/crew:review` or a single agent there. See `skills/market/SKILL.md` for the full rules.
+
+### `/crew:do` usage
+
+```
+/crew:do "<task>" [--topology auto|solo|market|hub-spoke|hybrid]
+                  [--n 3] [--models ...] [--judge ...] [--deterministic ...]
+```
+
+`--topology auto` (default) runs a cheap classifier on the task and picks. Explicit `--topology <choice>` always wins. Currently dispatches solo and market directly; hub-spoke tasks are advised back to `/crew:review`; hybrid is not implemented (falls back with a warning). See `skills/do/SKILL.md` for the decision table and classifier prompt.
 
 ## Agent
 
@@ -29,15 +49,15 @@ Three scopes, one command:
 Three reviewers by default:
 
 1. **Claude** — via the `code-reviewer` agent (no external CLI; uses whatever backend Claude Code is configured for — Bedrock, Anthropic API, etc.)
-2. **`gpt-5`** — routed to the best available backend
+2. **`gpt-5.2`** — routed to the best available backend
 3. **`gemini-3.1-pro`** — routed to the best available backend
 
 Override per-invocation:
 
 ```
-/crew:review with gpt-5 and grok-4-20-thinking
+/crew:review with gpt-5.2 and grok-4-20-thinking
 /crew:review --local with only gemini-3.1-pro
-/crew:review --mr 123 with claude-opus-4-7-thinking-high and gpt-5
+/crew:review --mr 123 with claude-opus-4-7-thinking-high and gpt-5.2
 ```
 
 Override defaults via `~/.config/crew/config.toml`:
@@ -91,7 +111,7 @@ All optional. `~/.config/crew/config.toml`:
 
 ```toml
 [defaults]
-roster = ["claude", "gpt-5", "gemini-3.1-pro"]
+roster = ["claude", "gpt-5.2", "gemini-3.1-pro"]
 
 [model_routing]
 "gpt-*" = "codex"              # explicit — codex only
@@ -142,6 +162,7 @@ Overlap detection is heuristic (same file + shared non-stopword keywords). Not p
 | `tools/cursor-adapt` | Create/cleanup Cursor scaffolding (AGENTS.md symlink, `.cursor/mcp.json` translation). Only used when the cursor backend is in the roster. |
 | `tools/merge-findings` | Parse per-reviewer replies, detect overlap clusters, emit a unified report. |
 | `tools/snapshot-diff` | First-run incremental mode helper: emit a whole-tree "all files as new" diff. |
+| `tools/validate-roster` | Parse-time check that each roster model is still offered by its resolved backend. Shared between `/crew:review` §4a and `/crew:market` §2. |
 
 ## Credits
 

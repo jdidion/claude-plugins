@@ -16,12 +16,12 @@ Resolution order (first match wins):
 Per-route backend selection:
     Each route resolves to a backend *name* (not a command). The actual
     backend script is <plugin>/tools/backends/<name>. If multiple backends
-    could host a model (e.g. gpt-5 on codex or cursor), prefer the first one
+    could host a model (e.g. gpt-5.2 on codex or cursor), prefer the first one
     that's installed.
 
 Config shape (all keys optional):
     [defaults]
-    roster = ["claude", "gpt-5", "gemini-3.1-pro"]
+    roster = ["claude", "gpt-5.2", "gemini-3.1-pro"]
 
     [model_routing]
     "gpt-*" = "codex"            # explicit override — codex only
@@ -82,7 +82,7 @@ BACKEND_BINARIES: dict[str, str] = {
     "anthropic-api": "curl",  # needs ANTHROPIC_API_KEY env; curl is ubiquitous
 }
 
-DEFAULT_ROSTER = ["claude", "gpt-5", "gemini-3.1-pro"]
+DEFAULT_ROSTER = ["claude", "gpt-5.2", "gemini-3.1-pro"]
 
 
 def load_config() -> dict:

@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# validate-roster — for each model in the roster, check that the
+# backend it resolves to actually offers that model. Catches stale
+# default-roster entries (like the gpt-5 retirement) at parse time
+# with a concrete error instead of a late-stage exit 1 from the
+# backend CLI.
+#
+# Usage:
+#   validate-roster <model1> [<model2> ...]
+#
+# Exit codes:
+#   0 — all models present, or no backend was introspectable (skipped
+#       with a warning so we don't block on transient backend outages)
+#   1 — one or more models missing; details on stderr, list of missing
+#       models (tab-separated "model<TAB>backend") on stdout
+#
+# Per-backend introspection:
+#   cursor  → `cursor-agent models`, first whitespace-delimited token per
+#             non-blank, non-header line.
+#   codex   → not validated in v1 (codex CLI not yet verified); skip with
+#             a warning. Revisit once the codex backend ships.
+#   others  → skipped.
+#
+# The tool calls `resolve-backend <model>` once per model to discover
+# the assigned backend. Unresolvable models fail immediately.
+
+set -u
+
+if [ $# -eq 0 ]; then
+    # Empty roster — normal for `with only claude`.
+    exit 0
+fi
+
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+RESOLVE="$PLUGIN_ROOT/tools/resolve-backend"
+
+# Cache each backend's catalog so we don't re-fetch per model.
+declare -A CATALOG_CACHE
+
+fetch_cursor_catalog() {
+    if [ -n "${CATALOG_CACHE[cursor]+set}" ]; then
+        return
+    fi
+    if ! command -v cursor-agent >/dev/null 2>&1; then
+        CATALOG_CACHE[cursor]=""
+        return
+    fi
+    # Output lines look like:
+    #   Available models
+    #
+    #   auto - Auto
+    #   gpt-5.2 - GPT-5.2
+    # ...
+    # Model ID is the first whitespace-delimited token on non-blank,
+    # non-header lines.
+    CATALOG_CACHE[cursor]=$(cursor-agent models 2>/dev/null | awk 'NF && $1 != "Available" {print $1}')
+}
+
+missing=()
+skipped_backends=()
+
+for model in "$@"; do
+    # Bare "claude" is the in-process code-reviewer agent, not a model
+    # for any backend. Claude Code validates its own model references.
+    if [ "$model" = "claude" ]; then
+        continue
+    fi
+
+    # Resolve the model to its backend. resolve-backend prints a path;
+    # the backend name is the basename of that path.
+    backend_path=$(python3 "$RESOLVE" "$model" 2>/dev/null) || {
+        echo "error: model '$model' could not be routed to any backend" >&2
+        missing+=("$model	(unrouteable)")
+        continue
+    }
+    backend=$(basename "$backend_path")
+
+    case "$backend" in
+        cursor)
+            fetch_cursor_catalog
+            if [ -z "${CATALOG_CACHE[cursor]}" ]; then
+                # Couldn't introspect — don't fail the whole run over a
+                # missing CLI, but warn once.
+                if ! printf '%s\n' "${skipped_backends[@]}" 2>/dev/null | grep -qxF cursor; then
+                    echo "warning: cursor-agent not on PATH or returned no output; skipping validation for cursor-backed models" >&2
+                    skipped_backends+=(cursor)
+                fi
+                continue
+            fi
+            if ! printf '%s\n' "${CATALOG_CACHE[cursor]}" | grep -qxF "$model"; then
+                missing+=("$model	cursor")
+            fi
+            ;;
+        codex)
+            if ! printf '%s\n' "${skipped_backends[@]}" 2>/dev/null | grep -qxF codex; then
+                echo "warning: codex backend validation not yet implemented; skipping codex-backed models" >&2
+                skipped_backends+=(codex)
+            fi
+            ;;
+        claude|anthropic-api)
+            # Claude's the in-process reviewer; Claude Code validates the
+            # model ID itself. Nothing to check here.
+            ;;
+        *)
+            if ! printf '%s\n' "${skipped_backends[@]}" 2>/dev/null | grep -qxF "$backend"; then
+                echo "warning: no validation logic for backend '$backend'; skipping" >&2
+                skipped_backends+=("$backend")
+            fi
+            ;;
+    esac
+done
+
+if [ ${#missing[@]} -gt 0 ]; then
+    echo "error: model(s) not offered by their assigned backend:" >&2
+    for entry in "${missing[@]}"; do
+        model="${entry%%	*}"
+        backend="${entry#*	}"
+        echo "  $model (backend: $backend)" >&2
+    done
+    echo "       run the backend's list command to see the current catalog," >&2
+    echo "       override with 'with <model>' or '--models <list>', or" >&2
+    echo "       update the default roster in ~/.config/crew/config.toml" >&2
+    echo "       or skills/review/SKILL.md." >&2
+    printf '%s\n' "${missing[@]}"
+    exit 1
+fi
+
+exit 0
