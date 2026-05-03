@@ -38,6 +38,7 @@ import json
 import os
 import re
 import sys
+import urllib.parse
 from datetime import date
 
 import yaml
@@ -78,18 +79,86 @@ def find_vault():
     sys.exit(1)
 
 
-# --- URL normalization (shared with feedly.py) ---
+# --- URL normalization ---
+#
+# Goal: collapse alternate URL forms of the same article to the same dedup key.
+# The old behavior stripped ALL query params, which broke for URLs where the
+# article id lives in the query string (e.g. YouTube `?v=...`, PubMed `?id=...`).
+# The new behavior strips only known tracking params and applies per-host
+# canonical rewrites for the heavy-hitter RSS sources (arxiv, biorxiv, medrxiv).
+
+# Tracking query params to strip. Covers most analytics/referral juice.
+_TRACKING_PARAMS = frozenset({
+    'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+    'utm_id', 'utm_name', 'utm_reader', 'fbclid', 'gclid', 'msclkid',
+    'mc_cid', 'mc_eid', 'ref', 'referrer', 'source', 'campaign',
+    '_hsenc', '_hsmi', 'hsCtaTracking', 'hsa_acc', 'hsa_cam',
+})
+
+# arxiv path: optional 'abs' or 'pdf' segment, then the id with optional vN suffix
+# and optional .pdf extension. Canonical form is /abs/<id> (no version, no ext).
+_ARXIV_PATH = re.compile(
+    r'^/(?:abs|pdf|html)/(\d{4}\.\d{4,5}|[a-z\-]+/\d{7})(?:v\d+)?(?:\.pdf)?/?$'
+)
+
+# biorxiv/medrxiv path: /content/10.1101/<id>[v<N>][.full[.pdf]]
+# Canonical form is /content/10.1101/<id> (no version, no .full, no .pdf).
+_BIORXIV_PATH = re.compile(
+    r'^/content/(10\.1101/[\w\-\.]+?)(?:v\d+)?(?:\.full)?(?:\.pdf)?/?$'
+)
+
+
+def _canonicalize_host_path(host, path):
+    """Apply per-host path rewrites to canonicalize alternate article URL forms."""
+    # arxiv.org/abs/2404.12345 ≡ arxiv.org/pdf/2404.12345 ≡ arxiv.org/abs/2404.12345v2
+    if host == 'arxiv.org':
+        m = _ARXIV_PATH.match(path)
+        if m:
+            return f'/abs/{m.group(1)}'
+    # biorxiv.org / medrxiv.org alternate forms
+    if host in ('biorxiv.org', 'medrxiv.org'):
+        m = _BIORXIV_PATH.match(path)
+        if m:
+            return f'/content/{m.group(1)}'
+    return path
+
 
 def normalize_url(url):
-    url = url.strip().rstrip('/').lower()
-    url = url.split('?')[0]
-    if url.startswith('https://'):
-        url = url[8:]
-    elif url.startswith('http://'):
-        url = url[7:]
-    if url.startswith('www.'):
-        url = url[4:]
-    return url
+    url = url.strip()
+    if not url:
+        return url
+    try:
+        parsed = urllib.parse.urlsplit(url)
+    except ValueError:
+        # Malformed URL — fall back to naive lowercase+rstrip so we at least
+        # don't crash the dedup pass.
+        return url.rstrip('/').lower()
+
+    host = parsed.netloc.lower()
+    if host.startswith('www.'):
+        host = host[4:]
+
+    path = parsed.path or '/'
+    path = _canonicalize_host_path(host, path)
+    # Normalize trailing slash only on non-root paths.
+    if len(path) > 1 and path.endswith('/'):
+        path = path.rstrip('/')
+
+    # Strip tracking params; keep everything else (YouTube ?v=, PubMed ?id=, …).
+    if parsed.query:
+        kept = [
+            (k, v) for k, v in urllib.parse.parse_qsl(parsed.query, keep_blank_values=False)
+            if k.lower() not in _TRACKING_PARAMS
+        ]
+        query = urllib.parse.urlencode(sorted(kept))  # sort for stable ordering
+    else:
+        query = ''
+
+    # Drop scheme and fragment. host+path+query is the canonical dedup key.
+    canonical = host + path
+    if query:
+        canonical += '?' + query
+    return canonical.lower()
 
 
 # --- Deduplication ---
