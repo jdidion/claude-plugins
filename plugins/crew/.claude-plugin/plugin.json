@@ -1,6 +1,6 @@
 {
   "name": "crew",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Multi-provider code review for Claude Code. Pluggable backends route models (GPT, Gemini, Grok, local) through the right CLI. Deterministic pre-gates, attributed findings, post-and-monitor on GitLab/GitHub.",
   "author": { "name": "John Didion" },
   "license": "MIT",

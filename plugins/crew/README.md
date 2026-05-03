@@ -142,6 +142,7 @@ Overlap detection is heuristic (same file + shared non-stopword keywords). Not p
 | `tools/cursor-adapt` | Create/cleanup Cursor scaffolding (AGENTS.md symlink, `.cursor/mcp.json` translation). Only used when the cursor backend is in the roster. |
 | `tools/merge-findings` | Parse per-reviewer replies, detect overlap clusters, emit a unified report. |
 | `tools/snapshot-diff` | First-run incremental mode helper: emit a whole-tree "all files as new" diff. |
+| `tools/validate-roster` | Parse-time check that each roster model is still offered by its resolved backend. Shared between `/crew:review` §4a and `/crew:market` §2. |
 
 ## Credits
 

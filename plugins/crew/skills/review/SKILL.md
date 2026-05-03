@@ -214,6 +214,27 @@ fi
 
 The adapter is idempotent and tracks what it creates so cleanup only removes what setup added. Other backends don't need adaptation.
 
+### 4a. Validate the roster
+
+Catalogs rotate. Before launching reviewers, ask each backend whether it still offers the models the roster assigns to it:
+
+```bash
+# Full ROSTER (including "claude"; the tool skips in-process entries itself).
+"${CLAUDE_PLUGIN_ROOT}/tools/validate-roster" "${ROSTER[@]}" || exit 1
+```
+
+The tool calls `resolve-backend` once per model to find each one's backend, then introspects each backend whose catalog it knows how to fetch:
+
+- **cursor** → `cursor-agent models` (first token per non-blank, non-header line).
+- **codex**, **gemini**, **ollama**, **anthropic-api** → not introspected; skipped with a warning.
+- **claude** (in-process) → skipped (Claude Code validates its own model IDs).
+
+Exits 1 and names the missing model(s) plus their assigned backend when any cursor-backed entry is absent. Exits 0 with a warning when the backend CLI isn't available — validation is defense-in-depth, not a hard requirement.
+
+Rationale: catches stale default-roster entries (like the `gpt-5` → `gpt-5.2` rename in v0.2.1) at parse time rather than after spinning up worktrees and waiting for a backend exit 1.
+
+Shared with `/crew:market` §2.
+
 ### 5. Launch external models in parallel (background)
 
 For each resolved `(model, backend)` pair, invoke the backend:
