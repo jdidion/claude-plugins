@@ -18,7 +18,12 @@ For each article the output adds:
                             rule agree this article is safe to auto-ignore
 
 Escalation rules:
-  strict (default)  — skip only when `_local.confidence == high-not-interested`.
+  strict (default)  — skip when either signal is strong enough to auto-ignore:
+                      (a) `confidence == high-not-interested`, or
+                      (b) `verdict == skip` AND `confidence == uncertain`
+                          — the classifier prompt only emits `verdict=skip`
+                          for HARD IGNORES, so a hedged (uncertain, skip)
+                          is the model under-reporting confidence on a skip.
                       Everything else falls through to Claude.
   permissive        — same as strict, plus auto-route `high-interested` items
                       to Inbox without Claude review. Not recommended until
@@ -142,7 +147,19 @@ def parse_response(content):
 
 def decide_skip(local, mode):
     conf = local.get('confidence')
+    verdict = local.get('verdict')
+    # Primary signal: confidence is explicitly high-not-interested.
     if conf == 'high-not-interested':
+        return True
+    # Secondary signal: the model hedges confidence as `uncertain` but still
+    # picks `verdict=skip`. Per the classifier prompt, `verdict=skip` is only
+    # emitted for HARD IGNORES (non-human genomics, business news, etc.), so a
+    # hedged (uncertain, skip) pair is the model telling us it's a skip while
+    # under-reporting confidence. Trust verdict here. Explicitly excluded:
+    # `verdict=skip` paired with `high-interested` (internally contradictory —
+    # don't trust) — we let it escalate to Claude to avoid false positives on
+    # genuinely-interesting articles the model flagged incorrectly.
+    if verdict == 'skip' and conf == 'uncertain':
         return True
     if mode == 'permissive' and conf == 'high-interested':
         # Permissive mode trusts high-interested to bypass Claude too.
