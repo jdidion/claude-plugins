@@ -268,10 +268,15 @@ def parse_slide_content(text: str) -> list[dict]:
             blocks.append({"type": "table", "rows": parse_table(table_lines)})
             continue
 
-        # Images
-        img_match = re.match(r"!\[.*?\]\((.+?)\)", stripped)
+        # Images — parse MARP width directive like ![w:1500](path.png)
+        img_match = re.match(r"!\[(.*?)\]\((.+?)\)", stripped)
         if img_match:
-            blocks.append({"type": "image", "path": img_match.group(1)})
+            alt = img_match.group(1)
+            width_px = None
+            w_match = re.search(r"w:(\d+)", alt)
+            if w_match:
+                width_px = int(w_match.group(1))
+            blocks.append({"type": "image", "path": img_match.group(2), "width_px": width_px})
             i += 1
             continue
 
@@ -419,11 +424,26 @@ def render_blocks(slide, blocks: list[dict], left, top, width, base_dir: Path):
                 if not img_path.exists():
                     img_path = base_dir.parent / "figures" / block["path"]
                 if img_path.exists():
-                    slide.shapes.add_picture(
-                        str(img_path), left, y,
-                        width=min(width, Inches(5)),
+                    # MARP slides render at 1280px wide (16:9 default, 1280x720).
+                    # Convert the w:NNN pixel directive to EMUs:
+                    #   slide_width_emu * (px / 1280).
+                    MARP_SLIDE_PX = 1280
+                    width_px = block.get("width_px")
+                    if width_px:
+                        img_w = int(SLIDE_W * (width_px / MARP_SLIDE_PX))
+                        img_w = min(img_w, SLIDE_W - MARGIN_L - MARGIN_R)
+                    else:
+                        img_w = min(width, Inches(8))
+                    content_left = MARGIN_L
+                    content_w = SLIDE_W - MARGIN_L - MARGIN_R
+                    if img_w < content_w:
+                        img_left = content_left + (content_w - img_w) // 2
+                    else:
+                        img_left = left
+                    pic = slide.shapes.add_picture(
+                        str(img_path), img_left, y, width=img_w,
                     )
-                    y += Inches(3.5)
+                    y += pic.height + Inches(0.1)
                 i += 1
 
             case _:
