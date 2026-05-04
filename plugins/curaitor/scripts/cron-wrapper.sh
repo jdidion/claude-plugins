@@ -19,6 +19,11 @@
 #       * "API Error ... Token is expired" (with optional preceding
 #         "AWS auth refresh timed out" lines) → "## Cron auth-expired" block
 #         (SSO session died and cron can't do interactive refresh).
+#   - If curaitor's local-triage backend is `omlx` AND no oMLX server is
+#     reachable at /health, start `omlx serve` in the background before
+#     calling Claude and stop it afterward. Interactive sessions that
+#     already have oMLX running are left untouched. This keeps the 14+GB
+#     Gemma model out of memory except during the cron window.
 #   - Otherwise passes through output and exit code.
 
 set -o pipefail
@@ -31,7 +36,6 @@ mkdir -p "$(dirname "$LOG")"
 
 # Capture output to a temp file so we can inspect before appending.
 TMP="$(mktemp -t curaitor-cron.XXXXXX)"
-trap 'rm -f "$TMP"' EXIT
 
 # Signal cron context so the skills' pre-Claude enqueue step (Step 3.6
 # in cu:discover, Step 3.7 in cu:triage) writes escalations to the
@@ -39,6 +43,112 @@ trap 'rm -f "$TMP"' EXIT
 # classifier refusal (or any mid-run failure) silently drops the day's
 # articles — they never reach Obsidian and never reach the queue.
 export CURAITOR_CRON=1
+
+# --- oMLX lifecycle (if curaitor is configured to use it) ---
+#
+# We only care about oMLX for this run. If curaitor's local-triage
+# backend is not oMLX, skip the whole block — cheap no-op for Ollama
+# users. If oMLX is already serving (interactive session left it up),
+# leave it alone. Only when WE started the process do we stop it in
+# the exit trap.
+OMLX_STARTED_BY_US=0
+OMLX_PID=
+OMLX_LOG=
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SETTINGS="$SCRIPT_DIR/../config/user-settings.yaml"
+
+_backend_is_omlx() {
+    # Env override wins; otherwise inspect user-settings.yaml. Emit the
+    # resolved backend on stdout ("omlx" or anything else).
+    if [ -n "$CURAITOR_LOCAL_BACKEND" ]; then
+        printf '%s\n' "$CURAITOR_LOCAL_BACKEND"
+        return
+    fi
+    # Use a minimal yaml parser to avoid a python dep on pyyaml here.
+    # `local_triage.backend` lives under the top-level key; we grep it
+    # out of a shallow scan, ignoring comments.
+    awk '
+        /^local_triage:/ {in_block=1; next}
+        /^[^[:space:]]/ {in_block=0}
+        in_block && /^[[:space:]]+backend:/ {
+            sub(/^[[:space:]]+backend:[[:space:]]*/, "")
+            sub(/#.*/, "")
+            gsub(/[[:space:]"'"'"']/, "")
+            print
+            exit
+        }
+    ' "$SETTINGS" 2>/dev/null
+}
+
+_omlx_healthy() {
+    # 2s connect timeout + 3s total — plenty for a local port check.
+    curl -s --max-time 3 --connect-timeout 2 \
+        -o /dev/null -w '%{http_code}' \
+        http://127.0.0.1:8000/health 2>/dev/null | grep -q '^200$'
+}
+
+_start_omlx() {
+    # Background the server, capture its PID, wait up to 60s for /health.
+    OMLX_LOG="$(mktemp -t curaitor-omlx.XXXXXX).log"
+    # nohup + disown keeps it alive even if this shell dies on SIGKILL.
+    nohup omlx serve > "$OMLX_LOG" 2>&1 &
+    OMLX_PID=$!
+    disown "$OMLX_PID" 2>/dev/null || true
+    # Poll health for up to 60s — first model load after a cold fork
+    # is typically ~15-25s, leave headroom.
+    for _ in $(seq 1 60); do
+        if _omlx_healthy; then
+            OMLX_STARTED_BY_US=1
+            return 0
+        fi
+        sleep 1
+    done
+    # Didn't come up. Kill the zombie and give up on oMLX — the shared
+    # client will hit a connection error and fall back to escalating
+    # articles to Claude (same behavior as Ollama-down).
+    if kill -0 "$OMLX_PID" 2>/dev/null; then
+        kill "$OMLX_PID" 2>/dev/null || true
+    fi
+    return 1
+}
+
+_stop_omlx() {
+    # Only stop if WE started it.
+    [ "$OMLX_STARTED_BY_US" = "1" ] || return 0
+    [ -n "$OMLX_PID" ] || return 0
+    if kill -0 "$OMLX_PID" 2>/dev/null; then
+        # Graceful TERM first, then KILL after 5s if it's stubborn.
+        kill -TERM "$OMLX_PID" 2>/dev/null || true
+        for _ in 1 2 3 4 5; do
+            kill -0 "$OMLX_PID" 2>/dev/null || break
+            sleep 1
+        done
+        kill -KILL "$OMLX_PID" 2>/dev/null || true
+    fi
+}
+
+# Unified exit handler: always stop oMLX (if we started it) and clean up.
+trap '_stop_omlx; rm -f "$TMP" "$OMLX_LOG"' EXIT
+
+BACKEND="$(_backend_is_omlx)"
+if [ "$BACKEND" = "omlx" ]; then
+    if ! _omlx_healthy; then
+        if ! _start_omlx; then
+            {
+                printf '\n## Cron oMLX-start-failed at %s (skill=%s)\n' "$TS" "$SLASH"
+                printf 'oMLX was not running and `omlx serve` did not become healthy within 60s.\n'
+                printf 'Articles will escalate to Claude without the local pre-pass.\n'
+                if [ -n "$OMLX_LOG" ] && [ -s "$OMLX_LOG" ]; then
+                    printf '\n--- omlx serve output (last 40 lines) ---\n'
+                    tail -40 "$OMLX_LOG" 2>/dev/null || true
+                fi
+                printf '\n'
+            } >> "$LOG"
+            # Don't fail the whole run — the Claude fallback is still the
+            # correct behavior. Continue to `claude -p`.
+        fi
+    fi
+fi
 
 claude -p "$SLASH" --permission-mode bypassPermissions > "$TMP" 2>&1
 CLAUDE_EXIT=$?
