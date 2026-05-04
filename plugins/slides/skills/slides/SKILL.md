@@ -11,6 +11,7 @@ Create MARP markdown slide decks and convert to PDF, HTML, and/or PPTX with visu
 
 $ARGUMENTS — One of:
 - A markdown file path + optional format flags: `/slides deck.md pptx`
+- A Typst file path + optional format flags: `/slides deck.typ pptx` (see Mode 1b)
 - `new <path>` to create a new deck: `/slides new analysis/talk.md`
 - `diagram <mermaid_code_or_file>` to render a Mermaid diagram to PNG
 
@@ -64,6 +65,37 @@ curl -s -X POST \
 ```
 
 The `mimeType: application/vnd.google-apps.presentation` in metadata triggers auto-conversion from PPTX to native Google Slides format, preserving tables, formatting, and theming.
+
+### Mode 1b: Convert existing Typst slides
+
+If the first argument is an existing `.typ` file, convert it to PPTX/gslides via an **image-per-slide** pipeline. PDF and HTML from Typst are already handled by `typst compile` itself.
+
+**Why image-per-slide:** Typst is arbitrary code that compiles to visual pages — there's no MARP-style structured AST to unpack into native PPTX text/table/image shapes. Rendering each page to a PNG and dropping it into a PPTX slide is the cleanest path and gives pixel-faithful output at the cost of non-editable slides.
+
+**Trade-off to surface to the user:** the resulting PPTX/Google-Slides slides are **one PNG per slide** — you cannot edit the text in Google Slides. If later editing is a hard requirement, stay in MARP.
+
+**PPTX** (via `typst_to_pptx.py`):
+```bash
+typst_to_pptx.py "$TYP_PATH" "${TYP_PATH%.typ}.pptx"
+# Flags:
+#   --ppi 200          render resolution (default 200; use 150 for smaller files, 300 for print)
+#   --root <dir>       override auto-detected project root
+#   --aspect 16:9      force slide aspect (default: detected from Touying `aspect-ratio` or `#set page`)
+```
+
+**PDF / HTML** (Typst native):
+```bash
+typst compile --root "$ROOT" "$TYP_PATH" "${TYP_PATH%.typ}.pdf"
+typst compile --root "$ROOT" "$TYP_PATH" "${TYP_PATH%.typ}.html" --format html  # Typst 0.13+
+```
+
+**Google Slides** (`gslides`): generate PPTX with `typst_to_pptx.py`, then upload via the same Drive-convert flow used for MARP PPTX in Mode 1.
+
+**Root detection:** `typst_to_pptx.py` walks up from the `.typ` looking for `typst.toml`; if not found, it scans the source for absolute `image("/foo/bar.png")` references and picks the first ancestor where those paths resolve. Override with `--root` if the heuristics pick the wrong directory.
+
+**Package dependencies:** Typst decks using `@preview/touying`, `@preview/fletcher`, etc. trigger a one-time package fetch on first compile. The converter does not handle offline environments — pre-compile on a network-connected machine if needed, or pass a precompiled PDF directly through `gs` / `libreoffice` yourself.
+
+**Font portability:** On macOS, prefer `Helvetica Neue → Helvetica → Arial`; add `Inter` and `DejaVu Sans` at the tail of the stack so Linux CI falls through cleanly. Typst emits warnings for missing fallback fonts but compiles anyway.
 
 ### Mode 2: Create new slide deck
 
