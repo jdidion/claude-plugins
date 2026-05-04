@@ -12,11 +12,11 @@
     {
       "name": "slides",
       "source": "./plugins/slides",
-      "description": "Create MARP slide decks and convert to PDF, HTML, PPTX, and Google Slides with visual validation. Includes a drawio skill for authoring overlapping-shape diagrams (Venn, block sketches) as draw.io XML and exporting headlessly to PNG/SVG/PDF.",
+      "description": "Create MARP slide decks and convert to PDF, HTML, PPTX, and Google Slides with visual validation. Ships two diagram-authoring skills: drawio (informal overlapping-shape sketches — Venn, block diagrams — via headless draw.io export) and typst-diagram (publication-quality figures with uniform-gap Venn layouts, triadic palette, reusable card/chip helpers, compiled via Typst).",
       "version": "1.2.0",
       "author": { "name": "John Didion" },
       "license": "MIT",
-      "keywords": ["slides", "marp", "pptx", "presentations", "mermaid", "drawio", "diagrams"]
+      "keywords": ["slides", "marp", "pptx", "presentations", "mermaid", "drawio", "typst", "diagrams"]
     },
     {
       "name": "muck",

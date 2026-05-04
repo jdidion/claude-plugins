@@ -189,6 +189,6 @@ open -a draw.io in.drawio
 
 ## See also
 
-- `typst-diagram` (global skill) — heavier, but pixel-perfect and better for publication-quality figures.
-- `figure-review` (global skill) — aesthetic rubric; run after every render.
-- Parent `/slides` skill — embed the rendered PNG in MARP decks via `![w:600](../diagrams/my.png)`.
+- Sibling `typst-diagram` skill in this plugin — heavier, but pixel-perfect and better for publication-quality figures (multi-zone Venn with uniform gaps, triadic palette, reusable card/chip helpers).
+- `figure-review` (user-local skill) — aesthetic rubric; run after every render.
+- Parent `slides` skill — embed the rendered PNG in MARP decks via `![w:600](../diagrams/my.png)`.
