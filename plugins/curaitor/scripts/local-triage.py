@@ -39,14 +39,16 @@ unless `--force` is set.
 
 import argparse
 import json
+import os
 import re
 import sys
-import time
 from pathlib import Path
-from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
 import yaml
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _llm_client import call_local_model, resolve_backend_config  # noqa: E402
 
 SETTINGS_PATH = Path(__file__).resolve().parent.parent / 'config' / 'user-settings.yaml'
 
@@ -106,35 +108,14 @@ def load_settings():
 
 def local_triage_config(settings):
     cfg = settings.get('local_triage') or {}
+    # Defer backend/model/base_url resolution to the shared client (which
+    # applies env-var precedence and backend-appropriate defaults). We only
+    # carry `enabled` + `escalation_mode` at this layer.
     return {
         'enabled': bool(cfg.get('enabled', False)),
-        'model': cfg.get('model', 'huihui_ai/gemma-4-abliterated:e4b'),
-        'ollama_host': cfg.get('ollama_host', 'http://localhost:11434'),
         'escalation_mode': cfg.get('escalation_mode', 'strict'),
+        'raw': cfg,  # Passed through to resolve_backend_config.
     }
-
-
-def ollama_chat(host, model, system, user, timeout=60):
-    req = Request(
-        f'{host}/api/chat',
-        data=json.dumps({
-            'model': model,
-            'messages': [
-                {'role': 'system', 'content': system},
-                {'role': 'user', 'content': user},
-            ],
-            'stream': False,
-            'format': 'json',
-            'options': {'temperature': 0.0, 'repeat_penalty': 1.1},
-            'think': False,
-        }).encode(),
-        headers={'Content-Type': 'application/json'},
-        method='POST',
-    )
-    t0 = time.perf_counter()
-    with urlopen(req, timeout=timeout) as resp:
-        body = json.loads(resp.read())
-    return body, time.perf_counter() - t0
 
 
 def parse_response(content):
@@ -168,7 +149,7 @@ def decide_skip(local, mode):
     return False
 
 
-def triage_one(article, cfg, system):
+def triage_one(article, cfg, backend_cfg, system):
     user = USER_TEMPLATE.format(
         title=article.get('title', ''),
         source=article.get('source', ''),
@@ -176,14 +157,24 @@ def triage_one(article, cfg, system):
         url=article.get('url', ''),
         summary=(article.get('summary') or article.get('description') or '')[:500],
     )
+    messages = [
+        {'role': 'system', 'content': system},
+        {'role': 'user', 'content': user},
+    ]
     try:
-        resp, latency = ollama_chat(cfg['ollama_host'], cfg['model'], system, user)
+        content, latency = call_local_model(
+            backend_cfg,
+            messages,
+            json_mode=True,
+            temperature=0.0,
+        )
     except (HTTPError, URLError, TimeoutError) as e:
         return {'error': str(e)}
 
-    parsed = parse_response(resp.get('message', {}).get('content', ''))
+    parsed = parse_response(content)
     local = {
-        'model': cfg['model'],
+        'model': backend_cfg['model'],
+        'backend': backend_cfg['backend'],
         'latency_s': round(latency, 2),
         **parsed,
     }
@@ -193,26 +184,33 @@ def triage_one(article, cfg, system):
 
 def main():
     parser = argparse.ArgumentParser(description='Local-model first-round triage pass for curaitor')
-    parser.add_argument('--model', help='Override user-settings model')
+    parser.add_argument('--model', help='Override user-settings model (also via CURAITOR_LOCAL_MODEL)')
     parser.add_argument('--mode', choices=['strict', 'permissive'], help='Override escalation mode')
-    parser.add_argument('--host', help='Override Ollama host URL')
+    parser.add_argument('--backend', choices=['ollama', 'omlx'], help='Override LLM backend (also via CURAITOR_LOCAL_BACKEND)')
+    parser.add_argument('--base-url', dest='base_url', help='Override backend base URL (also via CURAITOR_LOCAL_BASE_URL)')
     parser.add_argument('--force', action='store_true', help='Run even when local_triage.enabled=false')
     args = parser.parse_args()
 
     settings = load_settings()
     cfg = local_triage_config(settings)
-    if args.model:
-        cfg['model'] = args.model
     if args.mode:
         cfg['escalation_mode'] = args.mode
-    if args.host:
-        cfg['ollama_host'] = args.host
+    # CLI overrides surface through env vars so the shared client's resolver
+    # picks them up with the same precedence as external-env overrides.
+    if args.backend:
+        os.environ['CURAITOR_LOCAL_BACKEND'] = args.backend
+    if args.base_url:
+        os.environ['CURAITOR_LOCAL_BASE_URL'] = args.base_url
+    if args.model:
+        os.environ['CURAITOR_LOCAL_MODEL'] = args.model
 
     if not cfg['enabled'] and not args.force:
         # Disabled: pass-through, don't touch stdin, emit it back verbatim.
         data = sys.stdin.read()
         sys.stdout.write(data)
         return
+
+    backend_cfg = resolve_backend_config(cfg['raw'])
 
     articles = json.load(sys.stdin)
     if not isinstance(articles, list):
@@ -222,7 +220,7 @@ def main():
     augmented = []
     skipped = 0
     for a in articles:
-        local = triage_one(a, cfg, system)
+        local = triage_one(a, cfg, backend_cfg, system)
         a['_local'] = local
         if local.get('skip'):
             skipped += 1
@@ -233,7 +231,8 @@ def main():
     print(
         f'local-triage: {len(articles)} in, {skipped} auto-skipped, '
         f'{len(articles) - skipped} to claude '
-        f'(mode={cfg["escalation_mode"]}, model={cfg["model"]})',
+        f'(mode={cfg["escalation_mode"]}, backend={backend_cfg["backend"]}, '
+        f'model={backend_cfg["model"]})',
         file=sys.stderr,
     )
 

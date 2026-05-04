@@ -36,19 +36,19 @@ import os
 import re
 import sys
 import tempfile
-import time
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
 import yaml
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _llm_client import call_local_model, resolve_backend_config  # noqa: E402
 
 CACHE_DIR = Path.home() / '.curaitor' / 'summary-cache'
 QUEUE_PATH = Path.home() / '.curaitor' / 'summary-queue.txt'
 STATS_PATH = Path.home() / '.curaitor' / 'summary-stats.json'
 SETTINGS_PATH = Path(__file__).resolve().parent.parent / 'config' / 'user-settings.yaml'
-OLLAMA_DEFAULT = 'http://localhost:11434'
 GENERATOR_VERSION = 'cu-summarize v1'
 
 
@@ -147,16 +147,26 @@ def load_settings():
 
 
 def summary_config(settings):
-    cfg = settings.get('summarize') or {}
-    # Fallback to local_triage model if summarize isn't configured — any
-    # local model is better than failing, but the plan notes summarization
-    # is a stronger task and a non-local default may be preferable later.
-    default_model = (settings.get('local_triage') or {}).get('model') or 'huihui_ai/gemma-4-abliterated:e4b'
-    return {
-        'model': cfg.get('model', default_model),
-        'ollama_host': cfg.get('ollama_host', OLLAMA_DEFAULT),
-        'temperature': float(cfg.get('temperature', 0.2)),
-    }
+    """Resolve the backend for summarization.
+
+    Config precedence (high→low): CURAITOR_LOCAL_* env vars >
+    `summarize.{backend,base_url,api_key_path,model}` yaml >
+    `local_triage.*` yaml fallback > built-in defaults. The shared
+    `_llm_client.resolve_backend_config` handles most of this; we just
+    pick the right `local_triage`-or-`summarize` block to hand it.
+    """
+    raw = dict(settings.get('summarize') or {})
+    local_triage = settings.get('local_triage') or {}
+    # Inherit model/backend/base_url from local_triage when summarize doesn't
+    # override them. Same model on both tasks is the cheapest sane default —
+    # one loaded model, one cached prefix.
+    for key in ('backend', 'base_url', 'api_key_path', 'model', 'ollama_host'):
+        if key not in raw and local_triage.get(key):
+            raw[key] = local_triage[key]
+    raw.setdefault('temperature', 0.2)
+    backend_cfg = resolve_backend_config(raw)
+    backend_cfg['temperature'] = float(raw.get('temperature', 0.2))
+    return backend_cfg
 
 
 # --- Note parsing ---
@@ -266,30 +276,16 @@ Article content (from the Obsidian note body):
 
 Produce the structured summary now."""
 
-    req = Request(
-        f'{cfg["ollama_host"]}/api/chat',
-        data=json.dumps({
-            'model': cfg['model'],
-            'messages': [
-                {'role': 'system', 'content': PROMPT_SYSTEM},
-                {'role': 'user', 'content': user},
-            ],
-            'stream': False,
-            'options': {
-                'temperature': cfg['temperature'],
-                'repeat_penalty': 1.1,
-            },
-            'think': False,
-        }).encode(),
-        headers={'Content-Type': 'application/json'},
-        method='POST',
+    content, latency = call_local_model(
+        cfg,
+        [
+            {'role': 'system', 'content': PROMPT_SYSTEM},
+            {'role': 'user', 'content': user},
+        ],
+        temperature=cfg.get('temperature', 0.2),
     )
-    t0 = time.perf_counter()
-    with urlopen(req, timeout=120) as resp:
-        body = json.loads(resp.read())
-    latency = time.perf_counter() - t0
-    content = body.get('message', {}).get('content', '').strip()
-    # Strip fences if the model wraps output
+    content = (content or '').strip()
+    # Strip fences if the model wraps output.
     content = re.sub(r'^```(?:markdown|md)?\s*|\s*```$', '', content, flags=re.MULTILINE).strip()
     return content, latency
 
