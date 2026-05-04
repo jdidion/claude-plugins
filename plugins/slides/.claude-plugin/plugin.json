@@ -1,6 +1,6 @@
 {
   "name": "slides",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Create and convert slide decks. Accepts MARP markdown or Typst as input; outputs PDF, HTML, PPTX, and Google Slides with visual validation. Typst → PPTX uses an image-per-slide pipeline (pixel-faithful, non-editable). Ships two diagram-authoring skills: drawio (informal overlapping-shape sketches) and typst-diagram (publication-quality figures with uniform-gap Venn layouts and triadic palette).",
   "author": {
     "name": "John Didion"
