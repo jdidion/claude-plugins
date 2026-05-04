@@ -9,6 +9,14 @@
 #   cron-wrapper.sh ~/curaitor-discover.log /cu:discover
 #
 # Behavior:
+#   - Pre-flight probes `/opt/homebrew/bin/node --version` (since Claude
+#     Code is a Node app and cron's PATH picks up Homebrew node). If the
+#     probe fails with a known `libllhttp.9.3.dylib` dyld mismatch and the
+#     9.3.1 keg is still on disk, repoint `/opt/homebrew/opt/llhttp` to
+#     the 9.3.1 Cellar directory and re-probe. Probe failures that aren't
+#     auto-heal-able get a "## Cron pre-flight failed" block and exit 0.
+#   - Logs `node --version` + the llhttp dylib `node` is linked against
+#     at run start, so future dyld mismatches are diagnosable in one grep.
 #   - Runs `claude -p "<slash-command>" --permission-mode bypassPermissions`.
 #   - Captures combined stdout+stderr.
 #   - Two fingerprint-matched failure modes get an annotated log block and
@@ -43,6 +51,90 @@ TMP="$(mktemp -t curaitor-cron.XXXXXX)"
 # classifier refusal (or any mid-run failure) silently drops the day's
 # articles — they never reach Obsidian and never reach the queue.
 export CURAITOR_CRON=1
+
+# --- node pre-flight (self-heal llhttp dylib mismatch) ---
+#
+# Claude Code is a Node app; cron's PATH puts `/opt/homebrew/bin` before
+# anything pixi-managed, so cron actually invokes Homebrew node. When
+# Homebrew upgrades llhttp past the major version node was compiled
+# against (observed 2026-05-04: node 25.8.1_1 wants libllhttp.9.3.dylib,
+# /opt/homebrew/opt/llhttp → 9.4.1 which doesn't ship the 9.3 symlink),
+# node dies on startup with a dyld error and cron silently fails.
+#
+# Symptoms look identical to a successful-but-empty run: empty log
+# output, exit 0, no "API Error" for the refusal/token-expired
+# fingerprint matcher to catch. This block probes + self-heals.
+NODE_BIN="/opt/homebrew/bin/node"
+
+_node_works() {
+    # Discard stderr because the dyld error is long and we log it
+    # separately only when the probe fails.
+    "$NODE_BIN" --version >/dev/null 2>&1
+}
+
+_try_heal_llhttp() {
+    # If node's error mentions a specific libllhttp.X.Y.dylib and that
+    # keg still exists in Cellar, repoint /opt/homebrew/opt/llhttp to
+    # that version. Only runs when probe has already failed — safe to
+    # do nothing if the shapes don't match.
+    local err needed target keg
+    err="$("$NODE_BIN" --version 2>&1 || true)"
+    # Expected line: 'Library not loaded: /opt/homebrew/opt/llhttp/lib/libllhttp.9.3.dylib'
+    needed=$(printf '%s' "$err" | sed -nE 's|.*/libllhttp\.([0-9]+\.[0-9]+)\.dylib.*|\1|p' | head -1)
+    [ -n "$needed" ] || return 1
+    # Cellar dirs are named with patch versions (e.g., 9.3.1), but the
+    # dylib compat version is major.minor — pick any matching keg.
+    keg=$(ls -d "/opt/homebrew/Cellar/llhttp/${needed}."* 2>/dev/null | sort -V | tail -1)
+    [ -n "$keg" ] && [ -d "$keg" ] || return 1
+    target="../Cellar/llhttp/$(basename "$keg")"
+    # Sanity: the dylib file itself must exist in the keg.
+    [ -f "$keg/lib/libllhttp.${needed}.dylib" ] || return 1
+    ln -sfn "$target" /opt/homebrew/opt/llhttp 2>/dev/null || return 1
+    return 0
+}
+
+if ! _node_works; then
+    if _try_heal_llhttp && _node_works; then
+        # Self-heal succeeded; record it so the user sees the fix in the log.
+        {
+            printf '\n## Cron node self-heal at %s (skill=%s)\n' "$TS" "$SLASH"
+            printf 'Repointed /opt/homebrew/opt/llhttp to a compatible keg so\n'
+            printf 'node --version succeeds. This is a durable fix until the\n'
+            printf 'next `brew upgrade llhttp` — consider `brew reinstall node`\n'
+            printf 'to relink node against the current llhttp major.\n'
+        } >> "$LOG"
+    else
+        # Can't heal — log the error and exit 0 so cron doesn't mark this
+        # as a transient failure. The next interactive session can look
+        # at the log, run `brew reinstall node` or the `ln -sfn` pin, and
+        # the next cron cycle will pick up the fix.
+        {
+            printf '\n## Cron pre-flight failed at %s (skill=%s)\n' "$TS" "$SLASH"
+            printf 'Homebrew node is broken — Claude Code will not run.\n'
+            printf 'Common cause: llhttp dylib mismatch after a brew upgrade.\n'
+            printf 'Diagnose with:\n'
+            printf '  %s --version\n' "$NODE_BIN"
+            printf '  otool -L %s | grep llhttp\n' "$NODE_BIN"
+            printf '  ls -l /opt/homebrew/opt/llhttp\n'
+            printf 'Fix with either:\n'
+            printf '  brew reinstall node  # durable\n'
+            printf '  ln -sfn ../Cellar/llhttp/<matching-keg> /opt/homebrew/opt/llhttp\n'
+            printf '\n--- node --version output ---\n'
+            "$NODE_BIN" --version 2>&1 || true
+            printf '\n'
+        } >> "$LOG"
+        exit 0
+    fi
+fi
+
+# Telemetry: record node version + the llhttp dylib node is linked
+# against so future dyld mismatches are visible in a single grep of the
+# log. Cheap (~50ms) and runs on every successful cron fire.
+{
+    printf '\n## Cron run %s (skill=%s)\n' "$TS" "$SLASH"
+    printf 'node: %s\n' "$("$NODE_BIN" --version 2>/dev/null)"
+    printf 'llhttp link: %s\n' "$(otool -L "$NODE_BIN" 2>/dev/null | awk '/libllhttp/ {print $1; exit}')"
+} >> "$LOG"
 
 # --- oMLX lifecycle (if curaitor is configured to use it) ---
 #
