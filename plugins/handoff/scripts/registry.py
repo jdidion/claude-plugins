@@ -185,6 +185,15 @@ def cmd_register(session_id, surface=None, workspace=None, alias=None):
     }
 
     if final_alias:
+        # A session gets exactly one alias. Drop any other aliases
+        # currently pointing at this session_id before writing the new
+        # one — otherwise re-registering with a different alias (e.g.
+        # explicit --alias after an earlier workspace-title auto-alias)
+        # leaves both names addressable, and whoami picks non-deterministically.
+        reg["aliases"] = {
+            a: t for a, t in reg["aliases"].items()
+            if t != session_id or a == final_alias
+        }
         # Stale aliases with this name are overwritten silently —
         # prior owners lose their alias slot (they still exist in
         # sessions, just no longer addressable via that short name).
