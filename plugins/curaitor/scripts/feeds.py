@@ -162,6 +162,16 @@ def main():
             })
             continue
 
+        # Stamp every article with its origin feed so downstream scripts
+        # (local-triage.py, triage-write.py, accuracy-metrics.py) can route
+        # and aggregate by feed without re-plumbing the parent scope.
+        feed_name = feed['name']
+        feed_weight = feed.get('weight')
+        for a in articles:
+            a['feed_name'] = feed_name
+            if feed_weight is not None:
+                a['feed_weight'] = feed_weight
+
         # Filter by date
         recent = []
         for a in articles:
@@ -172,6 +182,7 @@ def main():
         results.append({
             'feed': feed['name'],
             'category': feed.get('category', ''),
+            'weight': feed_weight,
             'total': len(articles),
             'recent': len(recent),
             'articles': recent,

@@ -8,11 +8,23 @@ feeds:
   - name: bioRxiv Bioinformatics
     url: http://connect.biorxiv.org/biorxiv_xml.php?subject=bioinformatics+genetics+genomics
     category: science
+    weight: 0.6         # Established — "uncertain" verdicts lean toward Review
   - name: Nature Genetics
     url: http://feeds.nature.com/ng/rss/current
     category: science
+    weight: 0.3         # Probationary — "uncertain" verdicts lean toward Ignored
   # Per-feed user_agent override (for sites that block bots):
   # - name: GenomeWeb
   #   url: https://www.genomeweb.com/channel/all/rss
   #   category: science
+  #   weight: 0.6
   #   user_agent: "Googlebot/2.1 (+http://www.google.com/bot.html)"
+
+# Per-feed `weight` field (optional, advisory):
+#   0.6  Established — proven signal; LLM biases "uncertain" toward Review
+#   0.3  Probationary — new/unproven; LLM biases "uncertain" toward Ignored
+#   0.1  Demoted — low precision; articles route straight to Ignored unless
+#        the title matches inbox_title_keywords in reading-prefs.md.
+# See reading-prefs.md §Feed weights for graduation/demotion thresholds.
+# `/cu:status` surfaces graduation/demotion candidates automatically via
+# `scripts/accuracy-metrics.py --feed-weight-candidates`.

@@ -111,6 +111,31 @@ Review-ignored: 1 pass, last 2026-04-13
 
 If `--verbose`, also show the last 10 rolling window entries below the dashboard.
 
+### Step 2.5: Feed weight graduation / demotion surfacing
+
+After the main dashboard, run:
+
+```bash
+python3 scripts/accuracy-metrics.py --feed-weight-candidates
+```
+
+This reads `lifetime.rss.by_feed` in `accuracy-stats.yaml` and applies
+the thresholds documented in `reading-prefs.md` §Feed weights:
+
+- **Graduate 0.3 → 0.6**: ≥20 articles evaluated AND per-feed rolling
+  precision ≥40%.
+- **Demote (any → 0.1)**: ≥30 articles evaluated AND per-feed rolling
+  precision <15%.
+
+If the command prints anything other than "No feed weight changes suggested.",
+relay the output verbatim. The user applies the suggested weight changes to
+`config/feeds.yaml` manually — there's no auto-apply today because a
+curation system shouldn't silently shift its own routing behavior without
+explicit human approval.
+
+If the command prints "No feed weight changes suggested." (the common case),
+skip this block entirely — don't surface an empty section.
+
 ### Step 3: Actionable suggestions
 
 Based on the numbers, suggest the next action the user should take. Rules:

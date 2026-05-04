@@ -467,17 +467,126 @@ def cmd_normalize(args):
     }))
 
 
+# Graduation / demotion thresholds from reading-prefs.md §Feed weights.
+# Kept here (not in reading-prefs.md) so the surfacing logic stays close
+# to the per-feed aggregation; the docs remain authoritative on the why.
+_GRADUATE_MIN_EVALUATED = 20
+_GRADUATE_MIN_PRECISION = 0.40
+_DEMOTE_MIN_EVALUATED = 30
+_DEMOTE_MAX_PRECISION = 0.15
+_GRADUATED_WEIGHT = 0.6
+_DEMOTED_WEIGHT = 0.1
+
+
+def _feed_precision(bucket):
+    """Return (precision, evaluated_count) for a per-feed bucket.
+
+    Precision = tp / (tp + fp). Evaluated = tp + fp + tn + fn.
+    Returns (None, 0) for buckets with no signal yet.
+    """
+    tp = int(bucket.get('tp', 0) or 0)
+    fp = int(bucket.get('fp', 0) or 0)
+    tn = int(bucket.get('tn', 0) or 0)
+    fn = int(bucket.get('fn', 0) or 0)
+    evaluated = tp + fp + tn + fn
+    if tp + fp == 0:
+        return None, evaluated
+    return tp / (tp + fp), evaluated
+
+
+def cmd_feed_weight_candidates(args):
+    """Print graduation/demotion candidates from the per-feed by_feed block.
+
+    Thresholds come from reading-prefs.md §Feed weights:
+      * graduate 0.3 → 0.6 when ≥20 evaluated AND precision ≥40%
+      * demote  0.3 → 0.1 (or 0.6 → 0.1) when ≥30 evaluated AND precision <15%
+
+    Always print-only — no changes are written to feeds.yaml. The user
+    applies the suggested edit manually until we have a --apply flag
+    and enough confidence to enable it.
+    """
+    stats = load_stats()
+    lifetime = stats.get('lifetime') or {}
+    rss = lifetime.get('rss') or {}
+    by_feed = rss.get('by_feed') or {}
+
+    graduations = []
+    demotions = []
+    for feed_name, bucket in sorted(by_feed.items()):
+        precision, evaluated = _feed_precision(bucket)
+        if precision is None:
+            continue
+        current_weight = bucket.get('weight')
+        # Graduation path: probationary feeds only (weight ≈ 0.3).
+        if (evaluated >= _GRADUATE_MIN_EVALUATED
+                and precision >= _GRADUATE_MIN_PRECISION
+                and (current_weight is None or current_weight < _GRADUATED_WEIGHT)):
+            graduations.append({
+                'feed': feed_name,
+                'evaluated': evaluated,
+                'precision': round(precision, 3),
+                'current_weight': current_weight,
+                'target_weight': _GRADUATED_WEIGHT,
+            })
+        # Demotion path: any feed at ≥0.3 with enough evidence.
+        if (evaluated >= _DEMOTE_MIN_EVALUATED
+                and precision < _DEMOTE_MAX_PRECISION
+                and (current_weight is None or current_weight > _DEMOTED_WEIGHT)):
+            demotions.append({
+                'feed': feed_name,
+                'evaluated': evaluated,
+                'precision': round(precision, 3),
+                'current_weight': current_weight,
+                'target_weight': _DEMOTED_WEIGHT,
+            })
+
+    if args.json:
+        print(json.dumps({'graduations': graduations, 'demotions': demotions}, indent=2))
+        return
+
+    if not graduations and not demotions:
+        print('No feed weight changes suggested.')
+        return
+
+    if graduations:
+        print('Feed weight graduation candidates:')
+        for g in graduations:
+            cw = g['current_weight'] if g['current_weight'] is not None else '?'
+            print(
+                f"  * {g['feed']}: {cw} → {g['target_weight']} "
+                f"({g['evaluated']} articles, precision {g['precision'] * 100:.1f}%)"
+            )
+    if demotions:
+        print('Feed weight demotion candidates:')
+        for d in demotions:
+            cw = d['current_weight'] if d['current_weight'] is not None else '?'
+            print(
+                f"  * {d['feed']}: {cw} → {d['target_weight']} "
+                f"({d['evaluated']} articles, precision {d['precision'] * 100:.1f}%)"
+            )
+
+
 def cmd_record_signal(args):
     """Append a rolling_window entry AND increment lifetime counters.
 
     Replaces the ad-hoc inline YAML edits the skill docs described.
     Auto-trims the rolling window, so skills don't need to.
 
+    When --feed-name is supplied (RSS articles only), also increments a
+    per-feed counter under lifetime.rss.by_feed.<feed>.{tp,fp,tn,fn,...}.
+    --feed-weight, if supplied, is stored on the first signal for the
+    feed so /cu:status can decide graduation/demotion candidates. These
+    fields are optional; a record-signal call without them behaves
+    identically to the pre-2026-05-04 path.
+
     Example:
       python3 scripts/accuracy-metrics.py --record-signal \
           --signal tp --source rss --title "Article Title"
       python3 scripts/accuracy-metrics.py --record-signal \
           --signal tp --source rss --engaged --title "Article"
+      python3 scripts/accuracy-metrics.py --record-signal \
+          --signal fp --source rss --title "Article" \
+          --feed-name "AJHG" --feed-weight 0.3
     """
     if not args.signal or not args.source:
         print(json.dumps({'status': 'error', 'error': 'need --signal and --source'}))
@@ -497,6 +606,22 @@ def cmd_record_signal(args):
             stats['lifetime'][args.source].get('engaged_tp', 0) + 1
         )
 
+    # Per-feed bucket for probationary-weight graduation/demotion tracking.
+    # Only applies when the caller tags the signal with --feed-name.
+    if args.feed_name:
+        by_feed = stats['lifetime'][args.source].setdefault('by_feed', {})
+        feed_bucket = by_feed.setdefault(
+            args.feed_name,
+            {'tp': 0, 'fp': 0, 'tn': 0, 'fn': 0, 'first_seen': date.today().isoformat()},
+        )
+        feed_bucket[args.signal] = feed_bucket.get(args.signal, 0) + 1
+        if args.signal == 'tp' and args.engaged:
+            feed_bucket['engaged_tp'] = feed_bucket.get('engaged_tp', 0) + 1
+        # Keep the feed's weight up to date so /cu:status can decide
+        # graduation without needing to re-load feeds.yaml.
+        if args.feed_weight is not None:
+            feed_bucket['weight'] = args.feed_weight
+
     entry = {
         'date': date.today().isoformat(),
         'signal': args.signal,
@@ -506,6 +631,8 @@ def cmd_record_signal(args):
         entry['title'] = args.title
     if args.engaged:
         entry['engaged'] = True
+    if args.feed_name:
+        entry['feed'] = args.feed_name
     stats.setdefault('rolling_window', []).append(entry)
 
     save_stats(stats)  # auto-trims
@@ -533,6 +660,17 @@ def main():
     parser.add_argument('--title', help='Article title for the rolling_window entry (used with --record-signal)')
     parser.add_argument('--engaged', action='store_true',
                         help='Mark the entry as engaged TP (used with --record-signal --signal tp)')
+    parser.add_argument('--feed-name', dest='feed_name',
+                        help='Feed name for per-feed precision tracking (used with --record-signal). '
+                             'RSS articles only; ignored for instapaper.')
+    parser.add_argument('--feed-weight', dest='feed_weight', type=float,
+                        help='Feed probationary weight (used with --record-signal). Stored on the '
+                             'feed bucket so /cu:status can decide graduation/demotion candidates.')
+    parser.add_argument('--feed-weight-candidates', dest='feed_weight_candidates',
+                        action='store_true',
+                        help='Print feeds that cross graduation (0.3→0.6) or demotion thresholds '
+                             'based on lifetime.rss.by_feed precision. Print-only; user applies '
+                             'edits to feeds.yaml manually.')
     args = parser.parse_args()
 
     stats = load_stats()
@@ -545,6 +683,9 @@ def main():
         return
     if args.record_signal:
         cmd_record_signal(args)
+        return
+    if args.feed_weight_candidates:
+        cmd_feed_weight_candidates(args)
         return
 
     if args.backfill:

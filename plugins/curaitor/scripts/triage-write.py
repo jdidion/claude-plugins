@@ -29,6 +29,8 @@ Input JSON: array of objects, each with:
   - source (str) — instapaper|rss|chrome-reading|etc.
   - bookmark_id (int) — Instapaper bookmark ID (optional)
   - feed_name (str) — RSS feed name (optional)
+  - feed_weight (float) — probationary weight from feeds.yaml; 0.6 for
+    established feeds, 0.3 for probationary, 0.1 for demoted (optional)
   - date_saved (str) — YYYY-MM-DD (optional, defaults to today)
 
 Output: JSON summary to stdout.
@@ -348,6 +350,8 @@ def build_note(article):
         fm['bookmark_id'] = article['bookmark_id']
     if article.get('feed_name'):
         fm['feed_name'] = article['feed_name']
+    if article.get('feed_weight') is not None:
+        fm['feed_weight'] = article['feed_weight']
     if article.get('date_saved'):
         fm['date_saved'] = article['date_saved']
     if article.get('autonomy_level') is not None:
