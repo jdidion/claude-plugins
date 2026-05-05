@@ -20,6 +20,32 @@ feeds:
   #   weight: 0.6
   #   user_agent: "Googlebot/2.1 (+http://www.google.com/bot.html)"
 
+# Per-feed `fetch_via` backend (optional, default: rss):
+#
+#   rss       Direct RSS/Atom/RDF over HTTP (current default).
+#
+#   feedly    Route through Feedly's /v3/streams/contents API. Use for
+#             Cloudflare-JS-challenge-gated journals (OUP, Annual Reviews)
+#             that let Feedly's edge IPs through but block direct bots.
+#             Requires FEEDLY_TOKEN in .env or environment. `url` is still
+#             the publisher's RSS URL — it becomes the Feedly streamId source.
+#   # - name: Briefings in Bioinformatics
+#   #   url: http://bib.oxfordjournals.org/rss/current.xml
+#   #   fetch_via: feedly
+#   #   category: science
+#   #   weight: 0.3
+#
+#   openalex  Query OpenAlex /works filtered by ISSN. Use for ex-BMC journals
+#             that moved to link.springer.com and no longer expose public RSS
+#             (Springer auth-redirects the legacy /articles/most-recent/rss.xml
+#             URLs). No auth needed; polite-pool User-Agent is baked into
+#             feeds.py. Set `issn` instead of `url`.
+#   # - name: BMC Bioinformatics
+#   #   fetch_via: openalex
+#   #   issn: "1471-2105"
+#   #   category: science
+#   #   weight: 0.3
+
 # Per-feed `weight` field (optional, advisory):
 #   0.6  Established — proven signal; LLM biases "uncertain" toward Review
 #   0.3  Probationary — new/unproven; LLM biases "uncertain" toward Ignored

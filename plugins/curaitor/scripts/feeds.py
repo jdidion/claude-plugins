@@ -1,17 +1,25 @@
 #!/usr/bin/env python3
-"""Fetch and parse RSS feeds for curaitor.
+"""Fetch and parse feeds for curaitor.
 
 Usage:
-    python scripts/feeds.py [--days N] [--category CAT]
+    python scripts/feeds.py [--days N] [--category CAT] [--feed NAME]
 
-Reads config/feeds.yaml, fetches each feed, parses articles,
-and outputs JSON to stdout.
+Reads config/feeds.yaml, fetches each feed, and outputs JSON to stdout.
+
+Per-feed `fetch_via` dispatches to one of three backends:
+  - rss      (default) — direct RSS/Atom/RDF over HTTP via stdlib urllib
+  - feedly   — Feedly /v3/streams/contents (needs FEEDLY_TOKEN); unlocks
+               Cloudflare-challenge-gated journals whose edge cache lets
+               Feedly through
+  - openalex — OpenAlex /works by ISSN; unlocks ex-BMC journals now behind
+               Springer auth redirects
 """
 
 import json
 import os
 import sys
 import re
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
@@ -22,6 +30,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _ssl_util import build_ssl_context
 
 _SSL_CONTEXT = build_ssl_context()
+
+_POLITE_UA = 'curaitor/1.0 (mailto:johnpaul@didion.net)'
 
 
 def parse_date(date_str):
@@ -42,11 +52,23 @@ def parse_date(date_str):
     return None
 
 
-def fetch_feed(url, timeout=30, user_agent=None):
-    """Fetch and parse an RSS/Atom feed, return list of articles."""
+def _to_rfc2822(dt):
+    """Format a datetime as RFC 2822, which parse_date() already handles."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.strftime('%a, %d %b %Y %H:%M:%S %z')
+
+
+# ---------------------------------------------------------------------------
+# Backend: RSS / Atom / RDF (default)
+# ---------------------------------------------------------------------------
+
+def fetch_via_rss(feed, days=None, timeout=30):
+    """Fetch and parse an RSS/Atom feed, return (articles, error)."""
+    url = feed['url']
+    user_agent = feed.get('user_agent') or 'Mozilla/5.0 (compatible; curaitor/1.0)'
     try:
-        ua = user_agent or 'Mozilla/5.0 (compatible; curaitor/1.0)'
-        req = urllib.request.Request(url, headers={'User-Agent': ua})
+        req = urllib.request.Request(url, headers={'User-Agent': user_agent})
         with urllib.request.urlopen(req, timeout=timeout, context=_SSL_CONTEXT) as resp:
             data = resp.read()
     except Exception as e:
@@ -88,7 +110,6 @@ def fetch_feed(url, timeout=30, user_agent=None):
         link = (item.findtext('link') or '').strip()
         desc = (item.findtext('description') or '').strip()
         date = item.findtext('pubDate') or item.findtext('dc:date', namespaces=ns) or ''
-        # Strip HTML from description
         desc = re.sub(r'<[^>]+>', ' ', desc)
         desc = re.sub(r'\s+', ' ', desc).strip()[:500]
         articles.append({
@@ -119,9 +140,171 @@ def fetch_feed(url, timeout=30, user_agent=None):
     return articles, None
 
 
+# ---------------------------------------------------------------------------
+# Backend: Feedly /v3/streams/contents
+# ---------------------------------------------------------------------------
+
+_FEEDLY_TOKEN_CACHED = None
+_FEEDLY_TOKEN_LOADED = False
+
+
+def _load_feedly_token():
+    """Load FEEDLY_TOKEN from .env or environment (cached)."""
+    global _FEEDLY_TOKEN_CACHED, _FEEDLY_TOKEN_LOADED
+    if _FEEDLY_TOKEN_LOADED:
+        return _FEEDLY_TOKEN_CACHED
+    _FEEDLY_TOKEN_LOADED = True
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '.env')
+    if os.path.exists(env_path):
+        with open(env_path) as f:
+            for line in f:
+                if line.startswith('FEEDLY_TOKEN='):
+                    _FEEDLY_TOKEN_CACHED = line.strip().split('=', 1)[1]
+                    return _FEEDLY_TOKEN_CACHED
+    _FEEDLY_TOKEN_CACHED = os.environ.get('FEEDLY_TOKEN')
+    return _FEEDLY_TOKEN_CACHED
+
+
+def fetch_via_feedly(feed, days=7, timeout=30):
+    """Fetch articles via Feedly's stream API. feeds.yaml `url` becomes the streamId source."""
+    token = _load_feedly_token()
+    if not token:
+        return [], 'FEEDLY_TOKEN not set (add to .env or environment)'
+
+    stream_id = f"feed/{feed['url']}"
+    newer_than_ms = int((datetime.now(timezone.utc) - timedelta(days=days)).timestamp() * 1000)
+    qs = urllib.parse.urlencode({
+        'streamId': stream_id,
+        'count': '100',
+        'ranked': 'newest',
+        'newerThan': str(newer_than_ms),
+    })
+    url = f'https://cloud.feedly.com/v3/streams/contents?{qs}'
+    req = urllib.request.Request(url, headers={'Authorization': f'Bearer {token}'})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=_SSL_CONTEXT) as resp:
+            raw = resp.read().decode()
+    except Exception as e:
+        return [], f'feedly: {e}'
+
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as e:
+        return [], f'feedly: invalid JSON: {e}'
+
+    articles = []
+    for item in payload.get('items', []):
+        title = (item.get('title') or '').strip()
+        alts = item.get('alternate') or []
+        link = alts[0].get('href', '') if alts else (item.get('originId') or '')
+        desc = (
+            (item.get('summary') or {}).get('content')
+            or (item.get('content') or {}).get('content')
+            or ''
+        )
+        desc = re.sub(r'<[^>]+>', ' ', desc)
+        desc = re.sub(r'\s+', ' ', desc).strip()[:500]
+        published_ms = item.get('published') or item.get('updated') or item.get('crawled')
+        if published_ms:
+            dt = datetime.fromtimestamp(published_ms / 1000, tz=timezone.utc)
+            date = _to_rfc2822(dt)
+        else:
+            date = ''
+        articles.append({
+            'title': title,
+            'url': link,
+            'description': desc,
+            'date': date,
+        })
+    return articles, None
+
+
+# ---------------------------------------------------------------------------
+# Backend: OpenAlex /works
+# ---------------------------------------------------------------------------
+
+def _reconstitute_abstract(inverted_index):
+    """OpenAlex returns abstracts as {word: [positions]}; rebuild to a string."""
+    if not inverted_index:
+        return ''
+    positions = {}
+    for word, pos_list in inverted_index.items():
+        for p in pos_list:
+            positions[p] = word
+    return ' '.join(positions[i] for i in sorted(positions))
+
+
+def fetch_via_openalex(feed, days=7, timeout=30):
+    """Fetch articles via OpenAlex /works filtered by ISSN. feeds.yaml needs `issn`."""
+    issn = feed.get('issn')
+    if not issn:
+        return [], 'openalex: feed entry missing required `issn` field'
+
+    from_date = (datetime.now(timezone.utc) - timedelta(days=days)).strftime('%Y-%m-%d')
+    qs = urllib.parse.urlencode({
+        'filter': f'primary_location.source.issn:{issn},from_publication_date:{from_date}',
+        'sort': 'publication_date:desc',
+        'per-page': '100',
+        'select': 'id,title,publication_date,doi,primary_location,abstract_inverted_index',
+    })
+    url = f'https://api.openalex.org/works?{qs}'
+    req = urllib.request.Request(url, headers={'User-Agent': _POLITE_UA})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=_SSL_CONTEXT) as resp:
+            raw = resp.read().decode()
+    except Exception as e:
+        return [], f'openalex: {e}'
+
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as e:
+        return [], f'openalex: invalid JSON: {e}'
+
+    articles = []
+    for work in payload.get('results', []):
+        title = (work.get('title') or '').strip()
+        doi = work.get('doi') or ''
+        if doi.startswith('https://doi.org/'):
+            link = doi
+        elif doi:
+            link = f'https://doi.org/{doi}'
+        else:
+            primary = work.get('primary_location') or {}
+            link = (primary.get('landing_page_url') or work.get('id') or '')
+        desc = _reconstitute_abstract(work.get('abstract_inverted_index')).strip()[:500]
+        pub_date = work.get('publication_date') or ''
+        if pub_date:
+            try:
+                dt = datetime.strptime(pub_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+                date = _to_rfc2822(dt)
+            except ValueError:
+                date = pub_date
+        else:
+            date = ''
+        articles.append({
+            'title': title,
+            'url': link,
+            'description': desc,
+            'date': date,
+        })
+    return articles, None
+
+
+# ---------------------------------------------------------------------------
+# Dispatch table + main
+# ---------------------------------------------------------------------------
+
+_FETCHERS = {
+    'rss': fetch_via_rss,
+    'feedly': fetch_via_feedly,
+    'openalex': fetch_via_openalex,
+}
+
+
 def main():
     days = 7
     category_filter = None
+    feed_filter = None
     args = sys.argv[1:]
     while args:
         if args[0] == '--days' and len(args) > 1:
@@ -129,6 +312,9 @@ def main():
             args = args[2:]
         elif args[0] == '--category' and len(args) > 1:
             category_filter = args[1]
+            args = args[2:]
+        elif args[0] == '--feed' and len(args) > 1:
+            feed_filter = args[1]
             args = args[2:]
         else:
             args = args[1:]
@@ -152,8 +338,20 @@ def main():
     for feed in feeds:
         if category_filter and feed.get('category') != category_filter:
             continue
+        if feed_filter and feed.get('name') != feed_filter:
+            continue
 
-        articles, error = fetch_feed(feed['url'], user_agent=feed.get('user_agent'))
+        fetch_via = feed.get('fetch_via', 'rss')
+        fetcher = _FETCHERS.get(fetch_via)
+        if fetcher is None:
+            results.append({
+                'feed': feed['name'],
+                'error': f'unknown fetch_via={fetch_via!r}',
+                'articles': [],
+            })
+            continue
+
+        articles, error = fetcher(feed, days=days)
         if error:
             results.append({
                 'feed': feed['name'],
@@ -172,7 +370,6 @@ def main():
             if feed_weight is not None:
                 a['feed_weight'] = feed_weight
 
-        # Filter by date
         recent = []
         for a in articles:
             parsed = parse_date(a['date'])
@@ -183,6 +380,7 @@ def main():
             'feed': feed['name'],
             'category': feed.get('category', ''),
             'weight': feed_weight,
+            'fetch_via': fetch_via,
             'total': len(articles),
             'recent': len(recent),
             'articles': recent,
