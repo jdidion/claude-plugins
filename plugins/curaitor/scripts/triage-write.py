@@ -358,6 +358,12 @@ def build_note(article):
         fm['autonomy_level'] = article['autonomy_level']
     if article.get('media_type'):
         fm['media_type'] = article['media_type']
+    if article.get('triage_source'):
+        fm['triage_source'] = article['triage_source']
+    if article.get('local_model'):
+        fm['local_model'] = article['local_model']
+    if article.get('slop_label'):
+        fm['slop_label'] = article['slop_label']
 
     # Body
     parts = []
