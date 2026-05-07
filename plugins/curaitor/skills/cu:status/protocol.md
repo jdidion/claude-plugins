@@ -23,7 +23,7 @@ Execution protocol for the curaitor status dashboard. The SKILL.md is the public
 
 ### Step 0: Drain the level-2 pending queue (if non-empty)
 
-Cron `/cu:discover` and `/cu:triage` enqueue articles to `~/.curaitor/level2-pending.json` *before* handing them to Claude, then ack them on success. If Claude failed mid-cycle (most commonly cron auth expiry), those articles stay queued until an interactive session — this one — picks them up.
+Cron `/cu:discover` (headless, via `scripts/discover-cron.py`) writes pending-Claude articles to `Curaitor/Ignored/` with frontmatter `triage_source: pending-claude-review` **and** enqueues them to `~/.curaitor/level2-pending.json`. The Ignored write guarantees the article is visible in the vault even if Claude never drains; the queue entry is the cue for Claude to revisit. Cron `/cu:triage` still enqueues through the Claude path (pre-Claude enqueue, ack on success).
 
 Check the queue first:
 
@@ -31,28 +31,30 @@ Check the queue first:
 python3 scripts/level2-queue.py status
 ```
 
-If `pending > 0`, drain and process before anything else. Interactive `/cu:status`, `/cu:review`, `/cu:read`, and `/cu:review-ignored` sessions all run this step first because the user is already authed in their interactive Claude Code session:
+If `pending > 0`, drain and process before anything else. Interactive `/cu:status`, `/cu:review`, `/cu:read`, and `/cu:review-ignored` sessions all run this step first because the user is already authed in their interactive Claude Code session.
+
+**Safer pattern (peek + ack)** — preferred when any processing is non-trivial:
 
 ```bash
-python3 scripts/level2-queue.py drain > /tmp/level2-drain.json
-```
-
-For each article in the drained JSON:
-1. The article already has a `_local` object from Gemma 4. Use that as the starting classification.
-2. Run the normal level-2 Claude evaluation (same prompt as `/cu:triage` / `/cu:discover` Step 4) to produce the final category/confidence/verdict/tags/slop_label.
-3. Route using the standard three-tier rule (Curaitor/Inbox | Review | Ignored) with `source: {original source}` + `triage_source: local-model-escalated` in the frontmatter so accuracy-stats can split this population later.
-4. Write the note via `mcp__obsidian__write_note`.
-
-`drain` atomically clears the queue file, so a partial failure mid-processing means those articles are lost from the queue — if correctness matters, peek first and ack after:
-
-```bash
-# Safer pattern when the batch is large:
 python3 scripts/level2-queue.py peek > /tmp/level2-peek.json
 # ...process each article, record succeeded URLs to /tmp/processed-urls.txt...
 python3 scripts/level2-queue.py ack --urls-file /tmp/processed-urls.txt
 ```
 
-After processing completes, report to the user: `Drained N level-2-pending articles (Claude auth recovered).`
+For each article in the queue:
+1. The article has a `_local` object from Gemma 4 and a `source` field (`rss` for `/cu:discover`, `instapaper` for `/cu:triage`).
+2. Run the normal level-2 Claude evaluation (same prompt as `/cu:triage` / `/cu:discover`) to produce the final category/confidence/verdict/tags/slop_label.
+3. **Check whether the note already exists in `Curaitor/Ignored/`** (from the headless `/cu:discover` path — `triage_source: pending-claude-review`). Use `mcp__obsidian__search_notes` or scan the frontmatter URL:
+   - **If yes**: this is a `/cu:discover` pre-write. Update the note in place:
+     - If Claude's verdict promotes to Inbox/Review: `mcp__obsidian__move_note` to the target folder, then `mcp__obsidian__update_frontmatter` to overwrite `confidence`/`verdict`/`tags`/`category` and set `triage_source: discover-cron-claude-revisited`.
+     - If Claude's verdict confirms Ignored: `mcp__obsidian__update_frontmatter` to set `triage_source: discover-cron-claude-confirmed` and leave the note in place.
+   - **If no**: this is a `/cu:triage` pre-Claude enqueue (Instapaper). Write a fresh note via `mcp__obsidian__write_note` with `triage_source: local-model-escalated` (legacy contract preserved).
+4. Add the URL to `/tmp/processed-urls.txt` as you go; ack at the end.
+
+After processing completes, report to the user with a breakdown:
+`Drained N level-2-pending articles: X promoted to Inbox/Review, Y confirmed Ignored, Z new notes from Instapaper.`
+
+The `/cu:discover` cron path's pre-write to Ignored means an empty queue is the steady state: if Gemma's high-confidence calls are accurate, Claude doesn't need to revisit anything. The queue only grows when Gemma is uncertain AND the article isn't a clear demoted-feed/skip case. If queue drain surfaces a lot of promotions Gemma-to-Claude, that's signal to retune Gemma's prompt or promote feed weights.
 
 ### Step 1: Gather data
 
