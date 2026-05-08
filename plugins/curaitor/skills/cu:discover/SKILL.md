@@ -27,7 +27,7 @@ If `feeds.yaml` has no feeds configured, tell the user to export OPML from Feedl
 
 ## Step 2: Fetch articles from each feed
 
-Use `scripts/feeds.py --days N` rather than WebFetch — it handles the RSS / Feedly / OpenAlex backend dispatcher and per-feed canonicalization already.
+Use `scripts/feeds.py --days N` rather than WebFetch — it handles the RSS / OpenAlex backend dispatcher and per-feed canonicalization already.
 
 ## Step 3: Deduplicate
 
@@ -91,4 +91,3 @@ After the summary, check the Review queue (`Curaitor/Review/`). If non-empty, pr
 - Always read `reading-prefs.md` first
 - Always deduplicate against existing Obsidian notes
 - Be terse — summary table, not play-by-play
-- Feedly mark-read is deprecated (feeds were removed from Feedly in favor of the Feedly fetch_via backend); no step for it.

@@ -299,6 +299,21 @@ if grep -qiE 'API Error.*Token is expired' "$TMP"; then
     exit 0
 fi
 
-# Normal path — append output and preserve exit code.
-cat "$TMP" >> "$LOG"
+# Normal path — append output, annotate empty-output runs explicitly, and
+# always record exit code + end marker so a future silent-tail can be
+# distinguished from a truncated log write.
+TMP_BYTES=$(wc -c < "$TMP" 2>/dev/null | tr -d ' ' || echo 0)
+if [ "$TMP_BYTES" = "0" ]; then
+    {
+        printf '\n## Cron zero-output at %s (skill=%s)\n' "$TS" "$SLASH"
+        printf 'The invoked process exited %s but produced no stdout/stderr.\n' "$CLAUDE_EXIT"
+        printf 'For /cu:discover this indicates the orchestrator died before its\n'
+        printf 'summary line; for other skills it usually means claude -p hung or\n'
+        printf 'was killed. Investigate the next cron fire.\n'
+    } >> "$LOG"
+else
+    cat "$TMP" >> "$LOG"
+fi
+printf '\n## Cron end %s (skill=%s, exit=%s, bytes=%s)\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SLASH" "$CLAUDE_EXIT" "$TMP_BYTES" >> "$LOG"
 exit "$CLAUDE_EXIT"

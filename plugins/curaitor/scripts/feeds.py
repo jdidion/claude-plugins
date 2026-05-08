@@ -6,13 +6,16 @@ Usage:
 
 Reads config/feeds.yaml, fetches each feed, and outputs JSON to stdout.
 
-Per-feed `fetch_via` dispatches to one of three backends:
+Per-feed `fetch_via` dispatches to one of two backends:
   - rss      (default) — direct RSS/Atom/RDF over HTTP via stdlib urllib
-  - feedly   — Feedly /v3/streams/contents (needs FEEDLY_TOKEN); unlocks
-               Cloudflare-challenge-gated journals whose edge cache lets
-               Feedly through
   - openalex — OpenAlex /works by ISSN; unlocks ex-BMC journals now behind
                Springer auth redirects
+
+The short-lived `feedly` backend was removed 2026-05-08 — it depended on a
+browser-scraped FEEDLY_TOKEN with unpredictable expiry, and the two gated
+journals it unlocked (Annual Review of Genomics, Briefings in Bioinformatics)
+weren't worth the operational friction. Cloudflare-JS-challenge-gated sources
+that aren't reachable via RSS or OpenAlex are now just dropped from feeds.yaml.
 """
 
 import json
@@ -141,85 +144,6 @@ def fetch_via_rss(feed, days=None, timeout=30):
 
 
 # ---------------------------------------------------------------------------
-# Backend: Feedly /v3/streams/contents
-# ---------------------------------------------------------------------------
-
-_FEEDLY_TOKEN_CACHED = None
-_FEEDLY_TOKEN_LOADED = False
-
-
-def _load_feedly_token():
-    """Load FEEDLY_TOKEN from .env or environment (cached)."""
-    global _FEEDLY_TOKEN_CACHED, _FEEDLY_TOKEN_LOADED
-    if _FEEDLY_TOKEN_LOADED:
-        return _FEEDLY_TOKEN_CACHED
-    _FEEDLY_TOKEN_LOADED = True
-    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '.env')
-    if os.path.exists(env_path):
-        with open(env_path) as f:
-            for line in f:
-                if line.startswith('FEEDLY_TOKEN='):
-                    _FEEDLY_TOKEN_CACHED = line.strip().split('=', 1)[1]
-                    return _FEEDLY_TOKEN_CACHED
-    _FEEDLY_TOKEN_CACHED = os.environ.get('FEEDLY_TOKEN')
-    return _FEEDLY_TOKEN_CACHED
-
-
-def fetch_via_feedly(feed, days=7, timeout=30):
-    """Fetch articles via Feedly's stream API. feeds.yaml `url` becomes the streamId source."""
-    token = _load_feedly_token()
-    if not token:
-        return [], 'FEEDLY_TOKEN not set (add to .env or environment)'
-
-    stream_id = f"feed/{feed['url']}"
-    newer_than_ms = int((datetime.now(timezone.utc) - timedelta(days=days)).timestamp() * 1000)
-    qs = urllib.parse.urlencode({
-        'streamId': stream_id,
-        'count': '100',
-        'ranked': 'newest',
-        'newerThan': str(newer_than_ms),
-    })
-    url = f'https://cloud.feedly.com/v3/streams/contents?{qs}'
-    req = urllib.request.Request(url, headers={'Authorization': f'Bearer {token}'})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout, context=_SSL_CONTEXT) as resp:
-            raw = resp.read().decode()
-    except Exception as e:
-        return [], f'feedly: {e}'
-
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError as e:
-        return [], f'feedly: invalid JSON: {e}'
-
-    articles = []
-    for item in payload.get('items', []):
-        title = (item.get('title') or '').strip()
-        alts = item.get('alternate') or []
-        link = alts[0].get('href', '') if alts else (item.get('originId') or '')
-        desc = (
-            (item.get('summary') or {}).get('content')
-            or (item.get('content') or {}).get('content')
-            or ''
-        )
-        desc = re.sub(r'<[^>]+>', ' ', desc)
-        desc = re.sub(r'\s+', ' ', desc).strip()[:500]
-        published_ms = item.get('published') or item.get('updated') or item.get('crawled')
-        if published_ms:
-            dt = datetime.fromtimestamp(published_ms / 1000, tz=timezone.utc)
-            date = _to_rfc2822(dt)
-        else:
-            date = ''
-        articles.append({
-            'title': title,
-            'url': link,
-            'description': desc,
-            'date': date,
-        })
-    return articles, None
-
-
-# ---------------------------------------------------------------------------
 # Backend: OpenAlex /works
 # ---------------------------------------------------------------------------
 
@@ -296,7 +220,6 @@ def fetch_via_openalex(feed, days=7, timeout=30):
 
 _FETCHERS = {
     'rss': fetch_via_rss,
-    'feedly': fetch_via_feedly,
     'openalex': fetch_via_openalex,
 }
 
