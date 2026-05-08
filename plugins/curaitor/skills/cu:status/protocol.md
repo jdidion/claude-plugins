@@ -42,19 +42,23 @@ python3 scripts/level2-queue.py ack --urls-file /tmp/processed-urls.txt
 ```
 
 For each article in the queue:
-1. The article has a `_local` object from Gemma 4 and a `source` field (`rss` for `/cu:discover`, `instapaper` for `/cu:triage`).
-2. Run the normal level-2 Claude evaluation (same prompt as `/cu:triage` / `/cu:discover`) to produce the final category/confidence/verdict/tags/slop_label.
-3. **Check whether the note already exists in `Curaitor/Ignored/`** (from the headless `/cu:discover` path — `triage_source: pending-claude-review`). Use `mcp__obsidian__search_notes` or scan the frontmatter URL:
-   - **If yes**: this is a `/cu:discover` pre-write. Update the note in place:
-     - If Claude's verdict promotes to Inbox/Review: `mcp__obsidian__move_note` to the target folder, then `mcp__obsidian__update_frontmatter` to overwrite `confidence`/`verdict`/`tags`/`category` and set `triage_source: discover-cron-claude-revisited`.
-     - If Claude's verdict confirms Ignored: `mcp__obsidian__update_frontmatter` to set `triage_source: discover-cron-claude-confirmed` and leave the note in place.
-   - **If no**: this is a `/cu:triage` pre-Claude enqueue (Instapaper). Write a fresh note via `mcp__obsidian__write_note` with `triage_source: local-model-escalated` (legacy contract preserved).
-4. Add the URL to `/tmp/processed-urls.txt` as you go; ack at the end.
+1. The article has a `_local` object from Gemma 4 (may contain an `error` field if Gemma failed) and a `source` field (`rss` for `/cu:discover`, `instapaper` for `/cu:triage`).
+2. **All cron-queued articles now pre-write to `Curaitor/Ignored/`** under one of these `triage_source` values:
+   - `pending-claude-review` — Gemma was uncertain OR a Gemma error; Claude needs to decide.
+   - `pending-claude-review-hard-route` — `/cu:triage` diverted this article pre-Gemma because its URL is LinkedIn, video, or podcast. Claude must do the URL-specific work (link-mining from post body AND comments for LinkedIn; transcript hunt for video/podcast) before classifying.
+3. Locate the existing note via `mcp__obsidian__search_notes` or a frontmatter-URL scan of `Curaitor/Ignored/`:
+   - **Hard-routed LinkedIn posts**: use cmux browser snapshot to render the page, extract links from both the post body and the comment thread (LinkedIn authors often drop the primary source link in the first reply to dodge the "external links suppress reach" algorithm). If a high-value source URL is found, re-classify against that URL's content rather than the LinkedIn post itself.
+   - **Hard-routed video/podcast**: fetch transcript via YouTube Data API, `yt-dlp --skip-download --write-auto-sub`, or show-notes from the feed. If no transcript is available, keep as Ignored with `triage_source: review-confirmed-no-transcript`.
+   - **Otherwise (regular pending-claude-review)**: run the normal Claude evaluation against the article text (already in the note body's `## Summary` field or fetch fresh via WebFetch / Instapaper `bookmarks/get_text`).
+4. Apply the verdict in place:
+   - **Promote to Inbox/Review**: `mcp__obsidian__move_note` to the target folder, then `mcp__obsidian__update_frontmatter` to overwrite `confidence`/`verdict`/`tags`/`category` and set `triage_source: {source}-cron-claude-revisited` (substitute `discover` or `triage`).
+   - **Confirm Ignored**: `mcp__obsidian__update_frontmatter` to set `triage_source: {source}-cron-claude-confirmed` and leave the note in place.
+5. Add the URL to `/tmp/processed-urls.txt` as you go; ack at the end.
 
 After processing completes, report to the user with a breakdown:
-`Drained N level-2-pending articles: X promoted to Inbox/Review, Y confirmed Ignored, Z new notes from Instapaper.`
+`Drained N level-2-pending articles: X promoted to Inbox/Review, Y confirmed Ignored, Z hard-routed (LinkedIn/video/podcast).`
 
-The `/cu:discover` cron path's pre-write to Ignored means an empty queue is the steady state: if Gemma's high-confidence calls are accurate, Claude doesn't need to revisit anything. The queue only grows when Gemma is uncertain AND the article isn't a clear demoted-feed/skip case. If queue drain surfaces a lot of promotions Gemma-to-Claude, that's signal to retune Gemma's prompt or promote feed weights.
+The cron paths' pre-write to Ignored means an empty queue is the steady state: if Gemma's high-confidence calls are accurate, Claude doesn't need to revisit anything. The queue only grows when Gemma is uncertain, when Claude-only logic is needed (ai-tooling obsolescence check), or when the source requires browser-side handling (LinkedIn / video / podcast). If queue drain regularly surfaces promotions Gemma→Claude, that's signal to retune Gemma's prompt or promote feed weights.
 
 ### Step 1: Gather data
 

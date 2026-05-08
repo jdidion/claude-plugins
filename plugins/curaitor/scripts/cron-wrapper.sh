@@ -242,17 +242,24 @@ if [ "$BACKEND" = "omlx" ]; then
     fi
 fi
 
-# Dispatch: /cu:discover now runs as a fully headless Python orchestrator
-# that doesn't need Claude auth. All other skills still go through `claude -p`
-# until their equivalents are extracted. See scripts/discover-cron.py for the
-# pipeline (fetch → dedup → Gemma → deterministic routing → enqueue pending).
-if [ "$SLASH" = "/cu:discover" ]; then
-    python3 "$(dirname "$0")/discover-cron.py" > "$TMP" 2>&1
-    CLAUDE_EXIT=$?
-else
-    claude -p "$SLASH" --permission-mode bypassPermissions > "$TMP" 2>&1
-    CLAUDE_EXIT=$?
-fi
+# Dispatch: /cu:discover and /cu:triage now run as fully headless Python
+# orchestrators that don't need Claude auth. All other skills still go through
+# `claude -p`. See scripts/discover-cron.py and scripts/triage-cron.py for the
+# pipelines (fetch → dedup → Gemma → deterministic routing → enqueue pending).
+case "$SLASH" in
+    /cu:discover)
+        python3 "$(dirname "$0")/discover-cron.py" > "$TMP" 2>&1
+        CLAUDE_EXIT=$?
+        ;;
+    /cu:triage)
+        python3 "$(dirname "$0")/triage-cron.py" > "$TMP" 2>&1
+        CLAUDE_EXIT=$?
+        ;;
+    *)
+        claude -p "$SLASH" --permission-mode bypassPermissions > "$TMP" 2>&1
+        CLAUDE_EXIT=$?
+        ;;
+esac
 
 # Classifier-refusal fingerprint: "API Error" + "Usage Policy" in output.
 if grep -qiE 'API Error.*Usage Policy' "$TMP"; then
