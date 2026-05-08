@@ -312,7 +312,7 @@ curaitor is built around **Instapaper** but can be adapted:
 |------|------|-----------|
 | **Pocket** | OAuth 2.0 | Replace API calls in `cu:triage.md` with `/v3/get` and `/v3/send` |
 | **Raindrop.io** | OAuth 2.0 or test token | `GET /raindrops/{id}`, `PUT /raindrop/{id}` |
-| **Readwise Reader** | Token | `/api/v3/list/` — can also replace Feedly for RSS |
+| **Readwise Reader** | Token | `/api/v3/list/` — an RSS alternative |
 | **None (RSS only)** | — | Remove `/cu:triage`, use only `/cu:discover` |
 
 ### Reference managers
@@ -370,13 +370,6 @@ see verify errors:
 - Confirm you're running the expected Python (`bash scripts/find-python.sh`).
 - If a corporate proxy is active, exporting `SSL_CERT_FILE` and
   `REQUESTS_CA_BUNDLE` to the proxy's combined bundle will override certifi.
-
-### `FEEDLY_TOKEN` missing / expired
-
-`/cu:discover` will still run without `FEEDLY_TOKEN` — it just skips the
-post-discovery "mark as read in Feedly" step. Refresh the token by logging
-into Feedly in cmux browser and pulling it from
-`localStorage['feedly.session']`.
 
 ## Architecture
 

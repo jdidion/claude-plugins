@@ -351,30 +351,21 @@ Usage: check if `read_pdf` tool is available. If so, prefer it over WebFetch for
 
 `config/feeds.yaml` lists RSS feeds for `/cu:discover`. Add/remove by editing the file.
 
-## Feedly integration
-
-After `/cu:discover` processes RSS articles, mark them as read in Feedly so they don't pile up as unread.
-
-Helper script:
-```bash
-python3 scripts/feedly.py profile                         # test auth
-python3 scripts/feedly.py list STREAM_ID [--unread-only]  # list entries
-python3 scripts/feedly.py mark-read STREAM_ID --urls-file FILE
-python3 scripts/feedly.py mark-read STREAM_ID --urls URL1 URL2
-```
-
-Stream ID: set `FEEDLY_STREAM_ID` in `.env` (get from your Feedly collection URL)
-
-Auth: `FEEDLY_TOKEN` in `.env`. Token is a JWT from Feedly's web session (`localStorage['feedly.session']`). To refresh: log into Feedly in cmux browser, then extract via `cmux browser eval "JSON.parse(localStorage.getItem('feedly.session')).feedlyToken"`.
-
 ## Scheduling (unattended)
+
+Prefer `scripts/cron-wrapper.sh` over raw `claude -p` for cron:
+- It dispatches `/cu:discover` to the headless `scripts/discover-cron.py`
+  orchestrator, so discover runs don't need Claude auth at all.
+- For `/cu:triage` and other skills, it still calls `claude -p` but annotates
+  failure modes (Usage Policy, SSO token expiry, llhttp dylib mismatch) so
+  silent-tail runs are diagnosable.
 
 ```bash
 # Triage Instapaper every 6 hours
-0 */6 * * * cd $CURAITOR_DIR && claude -p "/cu:triage" --permission-mode bypassPermissions >> ~/curaitor-triage.log 2>&1
+0 */6 * * * cd ~/projects/curaitor-review && ~/projects/claude-plugins/plugins/curaitor/scripts/cron-wrapper.sh ~/curaitor-triage.log "/cu:triage"
 
-# Discover from feeds daily at 6am
-0 6 * * * cd $CURAITOR_DIR && claude -p "/cu:discover" --permission-mode bypassPermissions >> ~/curaitor-discover.log 2>&1
+# Discover from feeds daily at 6am (headless path; no Claude auth required)
+0 6 * * * cd ~/projects/curaitor-review && ~/projects/claude-plugins/plugins/curaitor/scripts/cron-wrapper.sh ~/curaitor-discover.log "/cu:discover"
 ```
 
 ### Cron authentication
