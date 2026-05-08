@@ -2,6 +2,12 @@
 
 Fetch unread Instapaper bookmarks, evaluate each article, route to Obsidian folders, and archive in Instapaper.
 
+**Cron no longer invokes this skill.** Scheduled triage runs go through the headless orchestrator `scripts/triage-cron.py`, which doesn't require Claude auth. It uses Instapaper's `/bookmarks/get_text` endpoint for full-article extraction and runs the same Gemma pre-pass as `/cu:discover`. Articles that need Claude judgment — ai-tooling obsolescence checks, LinkedIn link-mining (including comment-link extraction), video/podcast transcript handling — are routed to `Curaitor/Ignored/` with `triage_source: pending-claude-review` (or `…-hard-route` for the LinkedIn/video/podcast group) AND enqueued to level-2 so the next interactive Claude session (this one) promotes them via the standard drain in `skills/cu:status/protocol.md` §Step 0.
+
+Interactive use cases for this skill:
+1. **Ad-hoc manual triage** outside the cron window.
+2. **Judgment pass** over cron's output — especially the hard-routed LinkedIn / video / podcast items, which need browser-side work the headless path can't do.
+
 ## Arguments
 $ARGUMENTS — Optional: specific URL(s) to triage manually. If empty, fetch from Instapaper API.
 
@@ -89,7 +95,14 @@ print(resp.text)  # Returns HTML of processed article
 Or use WebFetch on the article URL as a simpler alternative.
 
 ### LinkedIn link mining
-When the article is a LinkedIn post, check the post content for ALL external links — not just GitHub. LinkedIn posts often link to product sites (.org, .io, .dev), blog posts, arxiv papers, or docs. Before classifying as "no repo/no source", extract every link from the post body via WebFetch or cmux browser snapshot. Resolve shortened `lnkd.in` links. The real content is often behind one of these links, not in the LinkedIn post itself.
+When the article is a LinkedIn post, check **both the post body AND the comments** for external links. LinkedIn posts often link to product sites (.org, .io, .dev), blog posts, arxiv papers, or docs — and the author frequently drops the primary source link in the first reply/comment thread rather than the post itself (to dodge LinkedIn's "external links suppress reach" algorithm).
+
+Before classifying as "no repo/no source":
+1. Extract every link from the post body via WebFetch or cmux browser snapshot.
+2. Extract links from the comment thread too — `cmux browser snapshot` captures them in the rendered page; a plain WebFetch typically does not.
+3. Resolve shortened `lnkd.in` links.
+
+The real content is often behind one of these links, not in the LinkedIn post itself.
 
 ### Non-text sources (videos, podcasts)
 If the URL is a video (YouTube, Vimeo) or podcast, check for a transcript or show notes. Use the transcript to generate the summary if available; otherwise use the description. If neither exists, route to `Curaitor/Review/` as uncertain. Add `media_type: video` or `media_type: podcast` to frontmatter.
