@@ -1,7 +1,7 @@
 {
   "name": "muck",
-  "version": "1.0.0",
-  "description": "Five tools for fighting AI slop: spot it, guard against it, clean it up, learn your voice, and generate it (for testing)",
+  "version": "1.1.0",
+  "description": "Five tools for fighting AI slop: spot it, guard against it, clean it up, learn your voice, and generate it (for testing). Voice learning and clean-with-reference accept HTTP(S) URLs and Google Drive refs, not just local files.",
   "author": { "name": "John Didion" },
   "license": "MIT",
   "keywords": ["writing", "slop", "editing", "humanize", "ai-detection", "voice"]
