@@ -6,10 +6,11 @@ Strip AI-generated writing patterns from text using a diagnose-reconstruct-audit
 
 $ARGUMENTS — Text to clean, provided as:
 - Inline text or a file path
-- Optional flags: `--preset <voice>`, `--context <profile>`, `--strict`
+- Optional flags: `--preset <voice>`, `--context <profile>`, `--voice <src>`, `--strict`
 
 **Presets (voice):** `crisp` (default), `warm`, `expert`, `story`
 **Contexts (tolerance):** `linkedin`, `blog`, `technical`, `email`, `docs`, `casual`
+**`--voice <src>`:** optional ephemeral voice reference. `src` can be a local file, HTTP(S) URL, or Google Drive ref (same shapes accepted by `/muck:voice --learn`). The source is fetched, analyzed inline, and used as an in-memory voice profile for this invocation only — nothing is written to `config/voice-profile.yaml`. Takes precedence over `--preset` when set. Takes precedence over `config/voice-profile.yaml` as well.
 
 ## Workflow
 
@@ -25,14 +26,24 @@ All word lists live in `config/patterns.yaml`. If the script is unavailable, dia
 
 ### Pass 2: Reconstruct
 
-If `config/voice-profile.yaml` exists and has non-null values, load it and apply the user's voice:
-- Match sentence length to their statistical profile (mean and variance)
+Resolve the voice to apply, in priority order:
+
+1. **`--voice <src>`** (ephemeral): resolve the source with `resolve-sources.py`, run `analyze-voice.py --json` on it, and use the resulting stats as an in-memory profile for this invocation only. Nothing is persisted.
+2. **`config/voice-profile.yaml`**: load it if present with non-null values.
+3. **`--preset`**: fall back to the named voice preset.
+
+When a profile (ephemeral or persisted) is active:
+- Match sentence length to its statistical profile (mean and variance)
 - Match punctuation habits (em-dash frequency, semicolon usage, etc.)
 - Apply style notes as additional constraints
-- Prefer their vocabulary preferences; avoid their avoided words
-- Follow their structural patterns (opener style, closer style, paragraph length)
+- Prefer the profile's vocabulary preferences; avoid its avoided words
+- Follow its structural patterns (opener style, closer style, paragraph length)
 
-If no voice profile, fall back to the selected voice preset.
+Example — match a specific blog's register for a single rewrite:
+
+```
+/muck:clean draft.md --voice https://some-blog.com/canonical-post/
+```
 
 **Rules for reconstruction:**
 1. Start with the actual topic. No warming up.

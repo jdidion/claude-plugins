@@ -5,11 +5,17 @@ Build and refine a voice profile so `/muck:clean` and `/muck:guard` match your n
 ## Arguments
 
 $ARGUMENTS — Mode and inputs:
-- `--learn [files...]` — analyze writing samples to build a profile
-- `--feedback [before.md after.md]` — refine profile from your edits
+- `--learn [sources...]` — analyze writing samples to build a profile
+- `--feedback [before after]` — refine profile from your edits
 - `--feedback "text"` — direct text feedback
 - `--show` — display current voice profile
 - `--reset` — clear the voice profile
+
+`sources` (for `--learn` and `--feedback`) can be any mix of:
+- local file paths (`file.md`, `~/writing/post.txt`)
+- HTTP(S) URLs (`https://yourblog.com/post/`)
+- Google Drive refs (`gdrive://<file-id>` or a `docs.google.com/document/d/<id>/…` URL)
+- Google Drive folder refs (`gdrive-folder://<id>` or a `drive.google.com/drive/folders/<id>` URL)
 
 ## Learn Mode (--learn)
 
@@ -18,21 +24,36 @@ Build a voice profile from writing samples.
 ### Usage
 
 ```
-/muck:voice --learn file1.md file2.md file3.md    # analyze specific files
-/muck:voice --learn                                # open file browser to choose
+/muck:voice --learn file1.md file2.md file3.md           # local files
+/muck:voice --learn https://yourblog.com/post-1/ file.md # mix URLs and local paths
+/muck:voice --learn gdrive-folder://ABC123               # a whole Drive folder
+/muck:voice --learn                                      # open file browser to choose
 ```
 
 ### Workflow
 
-**Step 1: Select samples.** If no files provided, browse for them:
+**Step 1: Select samples.** If no sources provided, browse for them:
 1. Check for `gum` CLI (`gum file --all`). If available, use it as a TUI file picker.
 2. Otherwise, Glob for `.md`, `.txt`, `.org` files in working directory and common locations.
 3. Present the list and ask the user to pick 3-5 files of their best writing.
 
+**Step 1.5: Resolve remote sources.** If any argument is a URL or Drive ref, turn it into a local file:
+
+```bash
+python3 <plugin_root>/scripts/resolve-sources.py --out-dir /tmp/muck-voice-$$ src1 src2 ...
+```
+
+The resolver:
+- passes local paths through unchanged;
+- fetches HTTP(S) URLs (stdlib urllib + SSRF guard), strips HTML, writes `.txt` to `--out-dir`;
+- downloads Drive files and folders via the `gws` CLI (must be on PATH and authenticated).
+
+It emits one resolved local path per line on stdout. Collect them and feed them to the analyzer. If any source fails the resolver exits 2 and prints `error: ...` lines on stderr — surface those to the user and offer to continue with the successes.
+
 **Step 2: Mechanical analysis.**
 
 ```bash
-python3 <plugin_root>/scripts/analyze-voice.py --json file1.md file2.md file3.md
+python3 <plugin_root>/scripts/analyze-voice.py --json $(cat resolved-paths.txt)
 ```
 
 Extracts: sentence length stats, punctuation habits, contraction rate, first-person usage, vocabulary diversity, frequent content words, structural patterns.
@@ -64,11 +85,15 @@ Refine the voice profile from user edits or direct feedback. Closes the learning
 
 ```
 /muck:voice --feedback before.md after.md
+/muck:voice --feedback https://blog/draft/ https://blog/published/     # remote before/after
+/muck:voice --feedback gdrive://<draft-id> ./final.md                  # mixed
 ```
+
+`before` and `after` accept the same source shapes as `--learn`. Run them through the resolver first if either is remote, then pass the resulting local paths to the diff script:
 
 1. Run the diff script:
    ```bash
-   python3 <plugin_root>/scripts/diff-voice.py before.md after.md --json
+   python3 <plugin_root>/scripts/diff-voice.py <before-local> <after-local> --json
    ```
    Extracts: word replacements, sentence length shifts, punctuation changes, contraction/first-person adjustments.
 
