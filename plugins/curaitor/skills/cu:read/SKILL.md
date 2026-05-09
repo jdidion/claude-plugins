@@ -289,3 +289,7 @@ The canonical rule lives inline with the verdict list at **Step 3.h.1** so you e
 - Save discussion notes before removing articles on r/t verdicts
 - On discard (d), confirm with the user before deleting
 - Track cmux browser surface:NN and reuse it
+- **No subjective quality judgments.** Describe the work and its authors factually; do not editorialize on how good they are. This applies to the article, the paper, the authors, and the methods.
+  - Banned descriptors (subjective): `excellent paper`, `great paper`, `strong paper`, `solid work`, `important contribution`, `major figure`, `leading researcher`, `prominent scholar`, `must-read`, `seminal`, `groundbreaking`, `compelling`, `impressive`.
+  - Acceptable descriptors (factual, verifiable): `highly cited` (cite the h-index or specific paper counts if asserting this), `first-author on [paper]`, `PI of [lab/consortium]`, `peer-reviewed in [journal]`, `the method achieves [specific metric]`, `the paper reports [specific finding]`.
+  - If the factual version requires a claim you can't verify from the article or a quick lookup, drop the adjective entirely rather than softening it. E.g. rewrite `Danny Miller is a major figure in clinical long-read genomics` → `Danny Miller (UW / BBI) works on clinical long-read genomics` if you can't source citation counts.
