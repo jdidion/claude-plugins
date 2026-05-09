@@ -166,3 +166,4 @@ Preferences updated:
 - Proactively flag articles that seem like potential false negatives in a separate "flagged" group
 - Only update preferences when a clear pattern correction emerges
 - Print all text output FIRST, then prompt — never use AskUserQuestion
+- **No subjective quality judgments** on papers, authors, or methods — see the same rule in `cu:read/SKILL.md` and `cu:review/SKILL.md`. When flagging potential false negatives, say `the article describes a clinical cfDNA benchmarking method` (factual) not `this looks like an important methods paper` (subjective).
