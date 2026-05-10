@@ -149,6 +149,107 @@ def decide_skip(local, mode):
     return False
 
 
+# ---------------------------------------------------------------------------
+# Consistency validation — Gemma-4 at batch=1 produces internally contradictory
+# classifications (e.g. confidence=high-not-interested paired with verdict=review,
+# or summary="highly relevant" paired with verdict=skip). The downstream router
+# reads confidence only, so these contradictions silently misroute articles.
+#
+# We validate here and re-prompt once on inconsistency. If the re-prompt still
+# contradicts, flag as `error: contradiction_unresolved` so the upstream
+# orchestrator routes the article to pending-claude-review rather than trusting
+# a non-deterministic output.
+# ---------------------------------------------------------------------------
+
+# The pairs we consider consistent. Any (confidence, verdict) combination NOT
+# in this set triggers a re-prompt.
+_CONSISTENT_PAIRS = {
+    ('high-not-interested', 'skip'),
+    ('high-not-interested', 'obsolete'),  # obsoletes are a form of skip
+    ('high-interested', 'read-now'),
+    ('high-interested', 'save-reference'),
+    ('uncertain', 'review'),
+    ('uncertain', 'skip'),       # hedged-skip — handled specially in decide_skip
+    ('uncertain', 'read-now'),   # rare but technically valid: edge-of-interest
+    ('uncertain', 'save-reference'),  # same
+}
+
+
+def _is_consistent(local):
+    """True if (confidence, verdict) is a known-consistent pair."""
+    conf = local.get('confidence')
+    verdict = local.get('verdict')
+    if not conf or not verdict:
+        return False  # missing field — always re-prompt
+    return (conf, verdict) in _CONSISTENT_PAIRS
+
+
+def validate_and_repair(local, messages, backend_cfg):
+    """Return a possibly-corrected classification + audit metadata.
+
+    If `local` is self-consistent, returns it unchanged (audit stays empty).
+    Otherwise re-prompts the model once with the contradiction called out. If
+    the re-prompt is still inconsistent, stamps an error so the upstream
+    orchestrator routes the article to pending-claude-review instead of
+    trusting an unreliable output.
+
+    Adds three audit keys to `local`:
+      - consistency_ok: bool (final state after possible re-prompt)
+      - consistency_retried: bool (did we re-prompt at least once?)
+      - consistency_tiebreaker: str (only if re-prompt failed; always
+        'pending-claude' in the current contract — kept as a field so later
+        policies can set 'prefer-verdict' / 'prefer-confidence' without a
+        schema change)
+    """
+    local['consistency_retried'] = False
+    local['consistency_ok'] = _is_consistent(local)
+    if local['consistency_ok']:
+        return local
+
+    # First-pass contradiction. Re-prompt once with a specific call-out.
+    prior_conf = local.get('confidence')
+    prior_verdict = local.get('verdict')
+    repair_note = (
+        f"Your previous classification was internally inconsistent: "
+        f"confidence='{prior_conf}' but verdict='{prior_verdict}'. "
+        "These are incompatible. Per the schema, high-not-interested must pair "
+        "with verdict='skip'; high-interested must pair with 'read-now' or "
+        "'save-reference'; 'uncertain' pairs with 'review' or 'skip'. "
+        "Re-classify with a consistent (confidence, verdict) pair and output "
+        "STRICT JSON only (no prose, no fences)."
+    )
+    repair_messages = messages + [
+        {'role': 'assistant', 'content': json.dumps({k: v for k, v in local.items() if k not in ('model','backend','latency_s','skip','consistency_retried','consistency_ok')})},
+        {'role': 'user', 'content': repair_note},
+    ]
+    try:
+        content, latency = call_local_model(
+            backend_cfg, repair_messages, json_mode=True, temperature=0.0,
+        )
+    except (HTTPError, URLError, TimeoutError) as e:
+        local['consistency_retried'] = True
+        local['consistency_ok'] = False
+        local['error'] = f'repair-call failed: {e}'
+        return local
+
+    repaired = parse_response(content)
+    local['consistency_retried'] = True
+    local['latency_s'] = round(local.get('latency_s', 0) + latency, 2)
+    local['prior_confidence_rejected'] = prior_conf
+    local['prior_verdict_rejected'] = prior_verdict
+    # Merge the repaired output in-place, but keep audit keys.
+    for k in ('category', 'confidence', 'verdict', 'slop_label', 'tags', 'summary'):
+        if k in repaired:
+            local[k] = repaired[k]
+    local['consistency_ok'] = _is_consistent(local)
+
+    # Still contradictory after the re-prompt. Don't trust it — flag for Claude.
+    if not local['consistency_ok']:
+        local['consistency_tiebreaker'] = 'pending-claude'
+        local['error'] = 'contradiction_unresolved'
+    return local
+
+
 def triage_one(article, cfg, backend_cfg, system):
     user = USER_TEMPLATE.format(
         title=article.get('title', ''),
@@ -178,6 +279,10 @@ def triage_one(article, cfg, backend_cfg, system):
         'latency_s': round(latency, 2),
         **parsed,
     }
+    # Consistency check + one-shot repair re-prompt. On persistent contradiction,
+    # validate_and_repair sets `error: contradiction_unresolved` so the upstream
+    # orchestrator routes the article to pending-claude-review.
+    local = validate_and_repair(local, messages, backend_cfg)
     local['skip'] = decide_skip(local, cfg['escalation_mode'])
     return local
 
@@ -219,11 +324,17 @@ def main():
     system = DEFAULT_SYSTEM
     augmented = []
     skipped = 0
+    consistency_retried = 0
+    consistency_unresolved = 0
     for a in articles:
         local = triage_one(a, cfg, backend_cfg, system)
         a['_local'] = local
         if local.get('skip'):
             skipped += 1
+        if local.get('consistency_retried'):
+            consistency_retried += 1
+        if local.get('error') == 'contradiction_unresolved':
+            consistency_unresolved += 1
         augmented.append(a)
 
     json.dump(augmented, sys.stdout)
@@ -232,7 +343,9 @@ def main():
         f'local-triage: {len(articles)} in, {skipped} auto-skipped, '
         f'{len(articles) - skipped} to claude '
         f'(mode={cfg["escalation_mode"]}, backend={backend_cfg["backend"]}, '
-        f'model={backend_cfg["model"]})',
+        f'model={backend_cfg["model"]}, '
+        f'consistency_retried={consistency_retried}, '
+        f'contradiction_unresolved={consistency_unresolved})',
         file=sys.stderr,
     )
 
