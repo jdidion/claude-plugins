@@ -1214,6 +1214,167 @@ def cmd_find_leftovers(args):
     print(file=sys.stdout)
 
 
+def cmd_stamp_reviewed(args):
+    """Mark an Inbox note as 'previously reviewed and kept'.
+
+    Finds the note in Curaitor/Inbox/ whose frontmatter `url` matches
+    --url, then rewrites its frontmatter to add:
+      - review_status: kept-after-review
+      - reviewed_at: <YYYY-MM-DD> (latest review date; overwrites on each call)
+      - reviewed_count: N (incremented on each stamp — so we can distinguish
+        a note reviewed once from one reviewed repeatedly)
+
+    Body is preserved verbatim. Idempotent — calling twice in the same day
+    just bumps the count.
+
+    Used by /cu:read's `skip` verdict and /cu:review's `y`/`r` verdicts to
+    flag articles the user explicitly chose to keep in Inbox after seeing
+    them. /cu:read's startup then surfaces these in a "Previously reviewed"
+    section so the user can distinguish fresh arrivals from items they've
+    already seen once.
+
+    Prints JSON status: {status: stamped|not-found|error, ...}.
+    """
+    vault = find_vault()
+    url = (args.url or '').strip()
+    if not url:
+        print(json.dumps({'status': 'error', 'error': 'missing --url'}))
+        sys.exit(2)
+
+    norm = normalize_url(url)
+    inbox_dir = os.path.join(vault, 'Curaitor', 'Inbox')
+    if not os.path.isdir(inbox_dir):
+        print(json.dumps({'status': 'error', 'error': f'Inbox dir not found: {inbox_dir}'}))
+        sys.exit(1)
+
+    match_path = None
+    for f in os.listdir(inbox_dir):
+        if not f.endswith('.md') or f.startswith('.'):
+            continue
+        p = os.path.join(inbox_dir, f)
+        head = read_frontmatter_only(p)
+        m = _URL_LINE.search(head)
+        if not m:
+            continue
+        note_url = m.group(1).strip().strip('"').strip("'")
+        if normalize_url(note_url) == norm:
+            match_path = p
+            break
+
+    if match_path is None:
+        print(json.dumps({
+            'status': 'not-found',
+            'url': url,
+            'normalized': norm,
+            'hint': 'URL not in Curaitor/Inbox/',
+        }))
+        return
+
+    # Parse + rewrite frontmatter. Same atomic-tmp+replace approach used by
+    # the rescue path and cmd_dedup_recycle.
+    with open(match_path, encoding='utf-8') as fh:
+        content = fh.read()
+    if not content.startswith('---\n'):
+        print(json.dumps({
+            'status': 'error',
+            'error': 'note has no YAML frontmatter',
+            'path': os.path.relpath(match_path, vault),
+        }))
+        sys.exit(1)
+    end = content.find('\n---', 4)
+    if end == -1:
+        print(json.dumps({
+            'status': 'error',
+            'error': 'unterminated frontmatter',
+            'path': os.path.relpath(match_path, vault),
+        }))
+        sys.exit(1)
+    fm_text = content[4:end]
+    body = content[end + len('\n---'):].lstrip('\n')
+    try:
+        fm_data = yaml.safe_load(fm_text) or {}
+    except yaml.YAMLError as e:
+        print(json.dumps({
+            'status': 'error', 'error': f'yaml parse: {e}',
+            'path': os.path.relpath(match_path, vault),
+        }))
+        sys.exit(1)
+
+    fm_data['review_status'] = 'kept-after-review'
+    fm_data['reviewed_at'] = date.today().isoformat()
+    fm_data['reviewed_count'] = int(fm_data.get('reviewed_count') or 0) + 1
+
+    new_fm = yaml.dump(fm_data, default_flow_style=False, sort_keys=False, allow_unicode=True).strip()
+    new_content = '---\n' + new_fm + '\n---\n\n' + body
+    tmp = match_path + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as fh:
+        fh.write(new_content)
+    os.replace(tmp, match_path)
+
+    print(json.dumps({
+        'status': 'stamped',
+        'path': os.path.relpath(match_path, vault),
+        'reviewed_count': fm_data['reviewed_count'],
+        'reviewed_at': fm_data['reviewed_at'],
+    }))
+
+
+def cmd_list_reviewed(args):
+    """List Inbox notes with review_status: kept-after-review.
+
+    Used by /cu:read's startup to surface previously-reviewed articles in a
+    distinct section before the fresh-arrivals queue. Returns JSON array,
+    sorted by reviewed_at descending (most-recently-re-reviewed first).
+    """
+    del args  # unused; kept for dispatch-signature consistency
+    vault = find_vault()
+    inbox_dir = os.path.join(vault, 'Curaitor', 'Inbox')
+    if not os.path.isdir(inbox_dir):
+        json.dump({'vault': vault, 'reviewed': []}, sys.stdout)
+        sys.stdout.write('\n')
+        return
+
+    reviewed = []
+    for f in sorted(os.listdir(inbox_dir)):
+        if not f.endswith('.md') or f.startswith('.'):
+            continue
+        p = os.path.join(inbox_dir, f)
+        head = read_frontmatter_only(p)
+        # Simple check first — avoid YAML parse for the vast majority of notes
+        # that haven't been reviewed.
+        if 'review_status: kept-after-review' not in head:
+            continue
+        try:
+            # Extract frontmatter YAML for the full details.
+            if not head.startswith('---\n'):
+                continue
+            end = head.find('\n---', 4)
+            if end == -1:
+                continue
+            fm = yaml.safe_load(head[4:end]) or {}
+        except yaml.YAMLError:
+            continue
+        if fm.get('review_status') != 'kept-after-review':
+            continue
+        reviewed.append({
+            'path': os.path.relpath(p, vault),
+            'title': fm.get('title', ''),
+            'url': fm.get('url', ''),
+            'reviewed_at': str(fm.get('reviewed_at', '')),
+            'reviewed_count': int(fm.get('reviewed_count') or 1),
+            'category': fm.get('category', ''),
+            'tags': fm.get('tags', []),
+        })
+
+    reviewed.sort(key=lambda r: r['reviewed_at'], reverse=True)
+    json.dump({
+        'vault': vault,
+        'count': len(reviewed),
+        'reviewed': reviewed,
+    }, sys.stdout, indent=2)
+    sys.stdout.write('\n')
+
+
 def cmd_dedup_recycle(args):
     """Collapse duplicate lines in Curaitor/Recycle.md by normalized URL.
 
@@ -1294,6 +1455,14 @@ def main():
                         help='Scan Inbox/Review for notes whose URL is already present '
                              'in a Topic note, Tools & Projects, or Bookmarks.md. These '
                              'indicate a missed delete after a t/c/b verdict.')
+    parser.add_argument('--stamp-reviewed', action='store_true',
+                        help='Find the Inbox note matching --url and mark its frontmatter '
+                             'with review_status: kept-after-review, reviewed_at, and '
+                             'incremented reviewed_count. Used by /cu:read skip and '
+                             '/cu:review y/r verdicts to flag "previously reviewed" notes.')
+    parser.add_argument('--list-reviewed', action='store_true',
+                        help='List Inbox notes with review_status: kept-after-review, '
+                             'sorted by reviewed_at descending. Used by /cu:read startup.')
     parser.add_argument('--attach-to-topic', action='store_true',
                         help='Append a [title](url) link under a heading in a Topic note, '
                              'skipping if the URL is already linked there. '
@@ -1334,6 +1503,10 @@ def main():
         cmd_add_to_catalog(args)
     elif args.find_leftovers:
         cmd_find_leftovers(args)
+    elif args.stamp_reviewed:
+        cmd_stamp_reviewed(args)
+    elif args.list_reviewed:
+        cmd_list_reviewed(args)
     elif args.dedup_only:
         cmd_dedup(args)
     else:

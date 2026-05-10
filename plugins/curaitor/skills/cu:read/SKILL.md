@@ -57,16 +57,35 @@ Do NOT block waiting for this job. Move on to Step 2 immediately.
 
 ## Step 2: Present Inbox overview
 
-```
-Inbox: 23 articles
+Before listing articles, query for previously-reviewed items so they can be surfaced in a distinct section:
 
- 1. [genomics]    "UPDhmm: detecting uniparental disomy from NGS trio data"
- 2. [genomics]    "PScnv: personalized self-normalizing CNV detection"
- 3. [ai-tooling]  "Harness design for long-running application development"
+```bash
+python3 scripts/triage-write.py --list-reviewed
+```
+
+Parse the JSON. Render the overview in **two sections when there are reviewed items**:
+
+```
+Inbox: 23 articles (3 previously reviewed)
+
+Previously reviewed (kept after last /cu:read):
+ R1. [genomics] "cfDNA fragment length MCED" (reviewed 2x, last 2026-05-08)
+ R2. [ai-tooling] "Harness design for long-running development" (reviewed 1x, 2026-05-07)
+ R3. [methods]  "Stratified Wasserstein kernel" (reviewed 1x, 2026-05-06)
+
+Fresh arrivals:
+  1. [genomics]    "UPDhmm: detecting uniparental disomy from NGS trio data"
+  2. [genomics]    "PScnv: personalized self-normalizing CNV detection"
  ...
 
-Starting with #1.
+Starting with R1 (most-recently-re-reviewed first) unless the user specifies otherwise.
 ```
+
+If `--list-reviewed` returns `count: 0`, render the single-section layout (no "Previously reviewed" header, no section break).
+
+Reading-order rule when both sections exist:
+- Default: walk Previously-reviewed first (R1, R2, …) in `reviewed_at` descending order, then fresh arrivals (#1, #2, …). The reasoning: the user already decided to keep these; revisiting them is the highest-signal use of the session.
+- The user can override by typing `fresh` at the verdict menu to jump to the fresh-arrivals section, or by typing a specific item number (R3, 5, etc.).
 
 ## Monitor orientation
 
@@ -222,7 +241,11 @@ The user can type:
    python3 scripts/triage-write.py --add-to-recycle --url "$URL" --title "$TITLE"
    ```
    Then delete from `Curaitor/Inbox/`. The helper normalizes URLs and skips the write if the URL is already in the live Recycle.md or a recent monthly archive, preventing duplicate-line accumulation. NOT a triage quality signal — triage was correct to route this to Inbox.
-- **skip** → Leave in `Curaitor/Inbox/`, move to next article.
+- **skip** → Leave in `Curaitor/Inbox/`, move to next article. Stamp the note's frontmatter with `review_status: kept-after-review`, bump `reviewed_count`, set `reviewed_at: <today>` via:
+  ```bash
+  python3 scripts/triage-write.py --stamp-reviewed --url "$URL"
+  ```
+  This lets the next `/cu:read` startup surface previously-kept articles in a distinct "Previously reviewed" section (see Step 0) so the user can distinguish fresh arrivals from items they consciously decided to keep. Best-effort: parse the JSON output — `status: stamped` on success, `status: not-found` is a no-op (rare; means the note's URL doesn't match Inbox state, worth investigating but don't block the verdict).
 - **q** → Stop, show session summary.
 
 ### h.1. Present the NEXT article immediately (do not end the turn)
