@@ -253,7 +253,7 @@ The user can type:
 
 - **!** → **Deep read mode** (see below). If repo detected: star it and add to Tools catalog.
 - **?** → **Discussion mode**: fetch full article text, conversational Q&A loop, re-present verdict when user says "done".
-- **y** → move to `Curaitor/Inbox/`, update frontmatter with tags. If repo detected: star it and add to Tools catalog. **True positive** — triage was right to flag this for review.
+- **y** → move to `Curaitor/Inbox/`, update frontmatter with tags. If repo detected: star it and add to Tools catalog. After the move, stamp `review_status: kept-after-review` via `python3 scripts/triage-write.py --stamp-reviewed --url "$URL"` — this is the "I reviewed it and want to keep reading later" signal that `/cu:read` uses to surface the article in a distinct "Previously reviewed" section. **True positive** — triage was right to flag this for review.
 - **t** → **Topic mode**: attach article to a topic, then delete from Curaitor/Review/ (article lives under the topic, not separately):
   - If user typed `t` alone and related topics were found: list them, ask which one (or "new")
   - If user typed `t <topic name>`: use that topic (create with `--create-if-missing` if new)
@@ -281,7 +281,7 @@ The user can type:
     --url "$URL" --title "$TITLE" --catalog "Bookmarks.md" \
     --category "$CATEGORY" --description "$DESCRIPTION"
   ```
-- **r** → save to Zotero via API, move to `Curaitor/Inbox/`, add zotero_key to frontmatter. **True positive**.
+- **r** → save to Zotero via API, move to `Curaitor/Inbox/`, add zotero_key to frontmatter. Then stamp `review_status: kept-after-review` via `python3 scripts/triage-write.py --stamp-reviewed --url "$URL"` so `/cu:read` surfaces the article in the "Previously reviewed" section next time. **True positive**.
 - **g** → **Get paper**: invoke the `/cu:request-paper` flow with the current article's metadata (title, authors, journal, URL). Do NOT change the article's folder or verdict — the user still owes a real decision after. Re-show the verdict menu for the same article so they can choose `r`/`y`/`t`/`skip` once they know the library is fetching it. Does not count as TP or FP yet — signal is deferred to the follow-up verdict.
 - **p** → **Post to Slack** (see Post flow below), then recycle the article. **True positive**.
 - **n** → **Recycle**: the user has reviewed this and doesn't want to keep it. Signal depends on engagement (see below):
