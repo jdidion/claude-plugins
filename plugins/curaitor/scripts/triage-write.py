@@ -274,8 +274,15 @@ def build_url_index(vault):
 
     Includes live note folders, the live Recycle.md, and the most recent
     monthly recycle archives. See `dedup_sources()` for the canonical list.
+
+    Uses `.curaitor/recycle-index.tsv` as a fast-path for the recycle portion
+    when it exists and is in sync with the markdown sources. Falls back to
+    line-by-line parse when the TSV is stale or missing.
     """
     known = set()
+    # Try the recycle fast-path once for all recycle sources. If it hits, we
+    # can skip per-file recycle parsing entirely.
+    cached_recycle = _load_recycle_tsv(vault)
     for src in dedup_sources(vault):
         if src['kind'] == 'folder':
             for f in os.listdir(src['path']):
@@ -286,13 +293,116 @@ def build_url_index(vault):
                 if m:
                     url = m.group(1).strip().strip('"').strip("'")
                     known.add(normalize_url(url))
-        elif src['kind'] == 'recycle':
+        elif src['kind'] == 'recycle' and cached_recycle is None:
+            # Only fall back to parsing markdown if the TSV wasn't usable.
+            # If we took the fast-path, cached_recycle already includes every
+            # recycle source's URLs (the TSV is built from the same file list).
             known |= _parse_recycle(src['path'])
+    if cached_recycle is not None:
+        known |= cached_recycle
     return known
 
 
+_RECYCLE_TSV_REL = os.path.join('.curaitor', 'recycle-index.tsv')
+
+
+def _recycle_tsv_path(vault):
+    return os.path.join(vault, _RECYCLE_TSV_REL)
+
+
+def _recycle_sources_checksum(vault):
+    """SHA-256 over Recycle.md + archive files included in dedup. Must match
+    the `_content_checksum` the reindex script writes, so keep it byte-exact.
+    """
+    import hashlib
+    h = hashlib.sha256()
+    for src in dedup_sources(vault):
+        if src['kind'] != 'recycle':
+            continue
+        try:
+            with open(src['path'], 'rb') as fh:
+                h.update(fh.read())
+        except OSError:
+            h.update(b'__MISSING__')
+    return h.hexdigest()
+
+
+def _load_recycle_tsv(vault):
+    """Load URLs from the TSV fast-path if it's valid.
+
+    Returns a set of normalized URLs on success, or None if:
+      - TSV doesn't exist
+      - TSV header checksum doesn't match current Recycle.md + archives
+      - TSV is malformed
+    Callers fall back to the line-by-line markdown parse on None and
+    schedule a background reindex so next run is fast.
+    """
+    path = _recycle_tsv_path(vault)
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding='utf-8') as fh:
+            first = fh.readline()
+            if not first.startswith('# recycle-index v1 checksum='):
+                return None
+            stored_checksum = first.strip().split('checksum=', 1)[1]
+            if stored_checksum != _recycle_sources_checksum(vault):
+                return None  # markdown edited since last reindex; fall back
+            header = fh.readline()  # consume "url_normalized\t..." header
+            if not header.startswith('url_normalized\t'):
+                return None
+            urls = set()
+            for line in fh:
+                # First column is the normalized URL; tabs may appear in titles
+                # (we strip them on write, but be defensive on read).
+                tab = line.find('\t')
+                if tab <= 0:
+                    continue
+                urls.add(line[:tab])
+            return urls
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def _rebuild_recycle_tsv_in_background(vault):
+    """Fire-and-forget background rebuild of the recycle TSV. Best-effort; a
+    failed rebuild is harmless because the fallback path works without it.
+
+    Runs async so a triage batch doesn't wait on the rebuild.
+    """
+    try:
+        import subprocess
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'recycle-reindex.py')
+        if not os.path.isfile(script):
+            return
+        subprocess.Popen(
+            ['python3', script, '--vault', vault],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except (OSError, ImportError):
+        pass  # best-effort
+
+
 def build_recycle_index(vault):
-    """Return only the recycled URLs (live + archives), for distinguishing duplicate sources."""
+    """Return the set of normalized URLs in Recycle.md + most-recent archives.
+
+    Prefers the `.curaitor/recycle-index.tsv` fast-path when it exists and its
+    checksum matches the live markdown sources. Falls back to the line-by-line
+    markdown parse on a miss AND schedules a background rebuild so the next
+    call hits the fast path. The fallback is always correct; the fast-path is
+    just an optimization that scales as the Recycle log grows.
+
+    See `scripts/recycle-reindex.py` for how the TSV is built / rebuilt.
+    """
+    cached = _load_recycle_tsv(vault)
+    if cached is not None:
+        return cached
+    # Fallback: parse markdown sources. Also kick off a rebuild so next run
+    # is fast (harmless if it races with another rebuilder; last-writer-wins
+    # via atomic tmp+rename in recycle-reindex.py).
+    _rebuild_recycle_tsv_in_background(vault)
     urls = set()
     for src in dedup_sources(vault):
         if src['kind'] == 'recycle':
