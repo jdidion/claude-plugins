@@ -300,6 +300,35 @@ def build_recycle_index(vault):
     return urls
 
 
+def build_url_to_note_index(vault):
+    """Map normalized URL → (folder_relpath, filename) for every live vault note.
+
+    Used by the Instapaper-overrides-Ignored rescue path so we can locate the
+    existing note and move it to Inbox without creating a duplicate. Only live
+    note folders are indexed — Recycle.md entries are intentionally excluded
+    (Recycle is authoritative: an Instapaper save over a recycled URL is dropped
+    with a stderr warning, not un-recycled).
+    """
+    index = {}
+    for src in dedup_sources(vault):
+        if src['kind'] != 'folder':
+            continue
+        folder_rel = os.path.relpath(src['path'], vault)
+        for f in os.listdir(src['path']):
+            if not f.endswith('.md') or f.startswith('.'):
+                continue
+            head = read_frontmatter_only(os.path.join(src['path'], f))
+            m = _URL_LINE.search(head)
+            if not m:
+                continue
+            url = m.group(1).strip().strip('"').strip("'")
+            norm = normalize_url(url)
+            # First-match-wins. If the same URL appears in multiple folders
+            # (shouldn't happen, but defensive), prefer whichever we see first.
+            index.setdefault(norm, (folder_rel, f))
+    return index
+
+
 # --- Filename sanitization ---
 
 def sanitize_filename(title, max_len=80):
@@ -463,12 +492,81 @@ def maybe_rollover_recycle(vault):
         pass
 
 
+def _rescue_note_ignored_to_inbox(old_path, new_path, article):
+    """Move an Ignored note to Inbox, stamping provenance in the frontmatter.
+
+    Rewrites the note's YAML frontmatter to:
+      - set `source: instapaper` (the rescue trigger)
+      - set `rescued_from_ignored: true` + `rescued_at: <today>`
+      - leave all other fields (title, url, summary, date_saved, etc.) intact
+
+    Body is preserved. The old file is unlinked atomically after the new
+    file is written, so a mid-run crash leaves at most the original note in
+    place (worst case: we retry and rescue again, which is idempotent).
+    """
+    with open(old_path, encoding='utf-8') as f:
+        content = f.read()
+    # Parse frontmatter block. Note must start with `---` per our write_note
+    # contract; if it doesn't we fall back to writing an empty frontmatter.
+    fm_data = {}
+    body = content
+    if content.startswith('---\n'):
+        end = content.find('\n---', 4)
+        if end != -1:
+            fm_text = content[4:end]
+            body = content[end + len('\n---'):].lstrip('\n')
+            try:
+                fm_data = yaml.safe_load(fm_text) or {}
+            except yaml.YAMLError:
+                fm_data = {}
+    # Apply rescue overrides.
+    fm_data['source'] = 'instapaper'
+    fm_data['rescued_from_ignored'] = True
+    fm_data['rescued_at'] = date.today().isoformat()
+    # Overwrite the old (now stale) classification so future dedup / routing
+    # passes don't confuse an Inbox note with a "high-not-interested" verdict.
+    # Preserve the prior values under `prior_*` keys so the audit trail survives.
+    for key in ('confidence', 'verdict', 'category'):
+        if key in fm_data:
+            fm_data[f'prior_{key}'] = fm_data[key]
+    # Fresh classification — Instapaper saves are explicit user interest and
+    # the note lands in Inbox, so `high-interested` / `save-reference` is the
+    # correct default. Callers can still override via the incoming article.
+    fm_data['confidence'] = article.get('confidence', 'high-interested')
+    fm_data['verdict'] = article.get('verdict', 'save-reference')
+    if article.get('category'):
+        fm_data['category'] = article['category']
+    # If the incoming bookmark has a bookmark_id, stamp it too (useful for later
+    # cross-reference against Instapaper archive events).
+    if article.get('bookmark_id'):
+        fm_data['bookmark_id'] = article['bookmark_id']
+    # Reserialize.
+    parts = ['---']
+    parts.append(yaml.dump(fm_data, default_flow_style=False, sort_keys=False, allow_unicode=True).strip())
+    parts.append('---')
+    parts.append('')
+    parts.append(body)
+    with open(new_path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(parts))
+    # Unlink the old copy. If new_path == old_path (shouldn't happen given we
+    # moved folders) this would blow away our write; guard anyway.
+    if os.path.abspath(new_path) != os.path.abspath(old_path):
+        try:
+            os.remove(old_path)
+        except OSError:
+            pass  # best-effort; the new Inbox note is authoritative now
+
+
 def cmd_write(args):
     """Write triage results to Obsidian."""
     vault = find_vault()
     maybe_rollover_recycle(vault)
     recycled_urls = build_recycle_index(vault)
     known_urls = build_url_index(vault)  # includes recycled + vault notes
+    # URL → (folder_relpath, filename) for every live vault note. Needed by
+    # the Instapaper-overrides-Ignored rescue path; built once up front so
+    # the per-article loop stays cheap.
+    url_to_note = build_url_to_note_index(vault)
 
     articles = json.load(sys.stdin)
     if not isinstance(articles, list):
@@ -477,10 +575,13 @@ def cmd_write(args):
     written = 0
     recycled_dup_note = 0
     recycled_dup_recycle = 0
+    rescued_from_ignored = 0
+    instapaper_dropped_recycle = 0
     skipped_nourl = 0
     errors = 0
     results = {'inbox': [], 'review': [], 'ignored': []}
     inbox_urls_for_summary = []
+    rescued_urls = []  # URLs we moved Ignored → Inbox (caller should archive in Instapaper)
 
     # Recycle file for duplicates
     recycle_path = os.path.join(vault, 'Curaitor', 'Recycle.md')
@@ -494,14 +595,54 @@ def cmd_write(args):
 
         norm = normalize_url(url)
         if norm in known_urls:
-            # Duplicate — recycle, don't create a note.
-            # Distinguish whether it matched a live vault note or was previously recycled.
+            source = (article.get('source') or '').lower()
             title = article.get('title', url)
             from_recycle = norm in recycled_urls
+            existing_note = url_to_note.get(norm)  # (folder_rel, filename) or None
+
+            # Instapaper-overrides-Ignored rescue path. An Instapaper save is
+            # explicit user intent ("I want to read this"). If the URL is sitting
+            # in Curaitor/Ignored/ from a prior RSS-era routing decision, honor
+            # the fresh Instapaper signal by moving the note to Inbox rather
+            # than dropping the save or re-recycling it. See memory file
+            # feedback_instapaper_overrides_rss.md for the 2026-05-10 incident
+            # this fixes.
+            if source == 'instapaper' and existing_note and existing_note[0].endswith('Ignored'):
+                folder_rel, filename = existing_note
+                old_path = os.path.join(vault, folder_rel, filename)
+                new_folder = 'Curaitor/Inbox'
+                new_path = os.path.join(vault, new_folder, filename)
+                try:
+                    os.makedirs(os.path.dirname(new_path), exist_ok=True)
+                    _rescue_note_ignored_to_inbox(old_path, new_path, article)
+                except (OSError, ValueError) as e:
+                    print(f"Error rescuing {title}: {e}", file=sys.stderr)
+                    errors += 1
+                    continue
+                rescued_from_ignored += 1
+                rescued_urls.append(url)
+                results['inbox'].append(title)
+                # The URL is still in known_urls from the pre-scan so no
+                # intra-batch re-rescue is possible. No Recycle line written.
+                continue
+
+            # Instapaper save but URL is in Recycle (no live note). Recycle is
+            # authoritative ("user definitively rejected this previously"); drop
+            # the save with a stderr warning so the caller knows not to create
+            # a note. Caller should still archive the bookmark in Instapaper so
+            # it doesn't reappear next cron.
+            if source == 'instapaper' and from_recycle:
+                print(
+                    f"WARN: Instapaper save dropped — URL is in Recycle: {url}",
+                    file=sys.stderr,
+                )
+                instapaper_dropped_recycle += 1
+                continue
+
+            # Default dedup path (RSS hit, or Instapaper hit against Inbox/Review
+            # which we leave alone): append one Recycle line if not already
+            # recorded. Do NOT create a note.
             tag = '(duplicate from Recycle)' if from_recycle else '(duplicate)'
-            # Only write a new recycle line if this URL isn't already recorded.
-            # Accumulating duplicate lines breaks `patch_note` disambiguation
-            # later; one entry per normalized URL is enough.
             if not from_recycle:
                 with open(recycle_path, 'a', encoding='utf-8') as rf:
                     rf.write(f"- [{title}]({url}) {tag}\n")
@@ -539,6 +680,9 @@ def cmd_write(args):
         'recycled_duplicate': recycled_dup_note + recycled_dup_recycle,
         'recycled_duplicate_from_note': recycled_dup_note,
         'recycled_duplicate_from_recycle': recycled_dup_recycle,
+        'rescued_from_ignored': rescued_from_ignored,
+        'rescued_urls': rescued_urls,
+        'instapaper_dropped_recycle': instapaper_dropped_recycle,
         'skipped_no_url': skipped_nourl,
         'errors': errors,
         'total_input': len(articles),
