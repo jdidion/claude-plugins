@@ -128,19 +128,35 @@ def dedup_and_recycle(
 ) -> tuple[list[dict], list[int], dict[str, int]]:
     """Return (survivors, archive_ids, counts).
 
-    Duplicates against the live vault are recycled AND their bookmark_ids
-    returned in archive_ids — Instapaper archive still needs to happen so
-    the bookmark doesn't reappear next cron fire.
+    Source-aware routing for Instapaper bookmarks:
+      - URL in Recycle.md (no live note): drop + archive the bookmark.
+        Recycle is authoritative. Print stderr warning so the drop is visible.
+      - URL in Curaitor/Ignored/: PASS THROUGH as survivor with marker so
+        triage-write.py's rescue path moves it to Inbox (Instapaper save is
+        a fresh user signal; the old Ignored decision was pre-save).
+      - URL in Curaitor/Inbox/ or Curaitor/Review/: skip + archive. The article
+        is already in a live queue the user is tracking. No Recycle line.
+      - URL in a terminal folder (Library, Topics) or elsewhere live: append
+        one Recycle line + archive. Legacy "already filed" behavior.
+      - No match: survivor (normal Gemma / pending-claude flow).
+
+    `archive_ids` includes every bookmark we've decided not to write a fresh
+    note for (including the rescue path — triage-write.py moves the note; the
+    bookmark is still consumed).
     """
     recycled_urls = triage_write.build_recycle_index(vault)
-    known_urls = triage_write.build_url_index(vault)
+    url_to_note = triage_write.build_url_to_note_index(vault)
 
     recycle_path = Path(vault) / 'Curaitor' / 'Recycle.md'
     recycle_path.parent.mkdir(parents=True, exist_ok=True)
 
     survivors: list[dict] = []
     archive_ids: list[int] = []
-    counts = {'new': 0, 'dup_note': 0, 'dup_recycle': 0, 'no_url': 0}
+    counts = {
+        'new': 0, 'dup_note': 0, 'dup_recycle': 0,
+        'rescued_from_ignored': 0, 'skipped_in_inbox_or_review': 0,
+        'no_url': 0,
+    }
 
     for b in bookmarks:
         url = (b.get('url') or '').strip()
@@ -149,12 +165,41 @@ def dedup_and_recycle(
             continue
         norm = triage_write.normalize_url(url)
         bid = b.get('bookmark_id')
-        if norm in recycled_urls:
+        existing_note = url_to_note.get(norm)  # (folder_rel, filename) or None
+
+        if norm in recycled_urls and not existing_note:
+            # Instapaper save hit a Recycle entry with no live note. Recycle is
+            # authoritative; drop with a warning.
+            print(
+                f'WARN: Instapaper save dropped — URL is in Recycle: {url}',
+                file=sys.stderr,
+            )
             counts['dup_recycle'] += 1
             if bid:
                 archive_ids.append(bid)
             continue
-        if norm in known_urls:
+
+        if existing_note:
+            folder_rel = existing_note[0]
+            # Instapaper save over an Ignored note: pass through for rescue.
+            # triage-write.py (cmd_write) will do the folder move + frontmatter
+            # stamp. We mark the bookmark here so run_gemma_pass() skips it —
+            # we don't want Gemma reclassifying a rescued article; the rescue
+            # flag means "user wants this, period."
+            if folder_rel.endswith('Ignored'):
+                b['_rescue_from_ignored'] = True
+                counts['rescued_from_ignored'] += 1
+                survivors.append(b)
+                continue
+            # Already in Inbox/Review (or other live non-Ignored folder). User
+            # is tracking it; archive the bookmark and move on without touching
+            # the note or the Recycle log.
+            if folder_rel.endswith(('Inbox', 'Review')):
+                counts['skipped_in_inbox_or_review'] += 1
+                if bid:
+                    archive_ids.append(bid)
+                continue
+            # Terminal folder (Library, Topics): legacy duplicate behavior.
             title = b.get('title') or url
             with recycle_path.open('a', encoding='utf-8') as rf:
                 rf.write(f'- [{title}]({url}) (duplicate)\n')
@@ -163,6 +208,7 @@ def dedup_and_recycle(
             if bid:
                 archive_ids.append(bid)
             continue
+
         counts['new'] += 1
         survivors.append(b)
 
@@ -193,11 +239,14 @@ def fetch_text(bookmark_id: int) -> tuple[str, int]:
 
 def enrich_and_hard_route(
     bookmarks: list[dict],
-) -> tuple[list[dict], list[dict]]:
-    """Return (gemma_candidates, hard_routed).
+) -> tuple[list[dict], list[dict], list[dict]]:
+    """Return (gemma_candidates, hard_routed, rescue_candidates).
 
     For each bookmark:
       - set `source: instapaper`, `date_saved` from `time` if present
+      - if `_rescue_from_ignored` was set by dedup_and_recycle, divert to
+        rescue_candidates and skip text-fetch + classification entirely
+        (the existing Ignored note is moved to Inbox as-is)
       - if the URL is LinkedIn/video/podcast, divert to hard_routed with a
         `media_type` / `hard_route_reason` tag and skip Gemma
       - otherwise fetch full text and attach it to the bookmark as
@@ -207,6 +256,7 @@ def enrich_and_hard_route(
     """
     gemma_candidates: list[dict] = []
     hard_routed: list[dict] = []
+    rescue_candidates: list[dict] = []
     for b in bookmarks:
         url = (b.get('url') or '').strip()
         b['source'] = 'instapaper'
@@ -217,6 +267,10 @@ def enrich_and_hard_route(
                 b['date_saved'] = date.fromtimestamp(int(t)).isoformat()
             except (TypeError, ValueError, OSError):
                 pass
+
+        if b.get('_rescue_from_ignored'):
+            rescue_candidates.append(b)
+            continue
 
         reason = hard_route_reason(url)
         if reason:
@@ -243,7 +297,7 @@ def enrich_and_hard_route(
                 b['description'] = text[:5000]
         gemma_candidates.append(b)
 
-    return gemma_candidates, hard_routed
+    return gemma_candidates, hard_routed, rescue_candidates
 
 
 # ---------------------------------------------------------------------------
@@ -460,17 +514,21 @@ def main() -> int:
          f'{dedup_counts.get("dup_note", 0)} duplicates, '
          f'{dedup_counts.get("dup_recycle", 0)} resurfaced from Recycle')
 
-    # Enrich text + hard-route non-text sources.
-    gemma_candidates, hard_routed = enrich_and_hard_route(survivors)
-    _log(f'hard-routed: {len(hard_routed)} (linkedin/video/podcast -> pending-claude)')
+    # Enrich text + hard-route non-text sources + pull out rescues.
+    gemma_candidates, hard_routed, rescue_candidates = enrich_and_hard_route(survivors)
+    _log(
+        f'hard-routed: {len(hard_routed)} (linkedin/video/podcast -> pending-claude); '
+        f'rescues: {len(rescue_candidates)} (Instapaper save over Ignored note)'
+    )
 
-    # Gemma on everything else.
+    # Gemma on everything except rescues (rescue path bypasses all classification).
     gemma_candidates = run_gemma_pass(gemma_candidates)
 
     auto_ignored, auto_inbox, pending = route(gemma_candidates)
     _log(
         f'route: auto_ignored={len(auto_ignored)}, auto_inbox={len(auto_inbox)}, '
-        f'pending_claude={len(pending)} (+ {len(hard_routed)} hard-routed)'
+        f'pending_claude={len(pending)} (+ {len(hard_routed)} hard-routed, '
+        f'{len(rescue_candidates)} rescues)'
     )
 
     if args.dry_run:
@@ -479,9 +537,11 @@ def main() -> int:
             'fetched': len(bookmarks),
             'survivors': len(survivors),
             'hard_routed': len(hard_routed),
+            'rescues': len(rescue_candidates),
             'auto_ignored': len(auto_ignored),
             'auto_inbox': len(auto_inbox),
             'pending_claude': len(pending),
+            'dedup': dedup_counts,
         }, indent=2))
         return 0
 
@@ -497,12 +557,19 @@ def main() -> int:
     # Step 5d: hard-routed (LinkedIn/video/podcast) -> Ignored + enqueue
     hard_res = write_batch(hard_routed, 'pending-claude-review-hard-route',
                            generate_summaries=False, force_ignored=True)
+    # Step 5e: rescues (Instapaper over Ignored) — triage-write.py's rescue
+    # branch moves the existing Ignored note to Inbox and stamps
+    # rescued_from_ignored: true. The note body is preserved so the user sees
+    # whatever summary was there before; we don't generate a new summary.
+    rescue_res = write_batch(rescue_candidates, 'instapaper-rescued-from-ignored',
+                             generate_summaries=False, force_ignored=False)
     enqueued = enqueue_pending(pending) + enqueue_pending(hard_routed)
 
     # Collect ALL the bookmark_ids that got written (ignored auto, inbox auto,
-    # pending, hard_routed, dup_note, dup_recycle) + archive in Instapaper.
-    # The two dup categories were already in archive_after; now add survivors.
-    for a in auto_ignored + auto_inbox + pending + hard_routed:
+    # pending, hard_routed, rescues, dup_note, dup_recycle) + archive in
+    # Instapaper. The three dup/skip categories are already in archive_after
+    # from dedup_and_recycle; now add survivors + rescues.
+    for a in auto_ignored + auto_inbox + pending + hard_routed + rescue_candidates:
         bid = a.get('bookmark_id')
         if bid:
             archive_after.append(int(bid))
@@ -520,6 +587,8 @@ def main() -> int:
             + hard_res.get('routing', {}).get('ignored', 0)
         ),
         'pending_claude_enqueued': enqueued,
+        'rescued_from_ignored': rescue_res.get('rescued_from_ignored', 0),
+        'rescued_urls': rescue_res.get('rescued_urls', []),
         'archived': arch_res,
         'elapsed_s': elapsed,
     }
