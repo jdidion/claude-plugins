@@ -21,7 +21,30 @@ from _ssl_util import install_certifi_env
 
 install_certifi_env()
 
+import time
+
 from requests_oauthlib import OAuth1Session
+from requests.exceptions import SSLError, ConnectionError as RequestsConnectionError
+
+
+def _post_with_retry(session, url, data, max_retries=3, base_delay=5):
+    """POST with retry on transient TLS/connection errors.
+
+    Instapaper's CDN occasionally serves intermediate certs whose
+    BasicConstraints extension is not marked critical, which Python 3.14 +
+    OpenSSL 3.6+ rejects. These are transient (minutes-to-an-hour window
+    during cert rotation). Retry with backoff.
+    """
+    for attempt in range(max_retries):
+        try:
+            return session.post(url, data=data)
+        except (SSLError, RequestsConnectionError):
+            if attempt == max_retries - 1:
+                raise
+            time.sleep(base_delay * (attempt + 1))
+    # Unreachable (the final iteration either returns or raises), but
+    # keeps the type-checker happy about non-None return type.
+    raise RuntimeError('unreachable')
 
 
 def load_credentials():
@@ -53,7 +76,7 @@ def list_bookmarks(session, limit=500, folder=None):
     data = {'limit': limit}
     if folder:
         data['folder_id'] = folder
-    resp = session.post('https://www.instapaper.com/api/1/bookmarks/list', data=data)
+    resp = _post_with_retry(session, 'https://www.instapaper.com/api/1/bookmarks/list', data=data)
     if resp.status_code != 200:
         print(f"API error: {resp.status_code} {resp.text[:200]}", file=sys.stderr)
         sys.exit(1)
@@ -73,9 +96,10 @@ def list_bookmarks(session, limit=500, folder=None):
 
 
 def get_text(session, bookmark_id):
-    resp = session.post(
+    resp = _post_with_retry(
+        session,
         'https://www.instapaper.com/api/1/bookmarks/get_text',
-        data={'bookmark_id': bookmark_id}
+        data={'bookmark_id': bookmark_id},
     )
     if resp.status_code != 200:
         return {'bookmark_id': bookmark_id, 'text': '', 'error': f'{resp.status_code}'}
@@ -88,9 +112,10 @@ def get_text(session, bookmark_id):
 def archive_bookmarks(session, bookmark_ids):
     results = []
     for bid in bookmark_ids:
-        resp = session.post(
+        resp = _post_with_retry(
+            session,
             'https://www.instapaper.com/api/1/bookmarks/archive',
-            data={'bookmark_id': bid}
+            data={'bookmark_id': bid},
         )
         results.append({
             'bookmark_id': bid,
