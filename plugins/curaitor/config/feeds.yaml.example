@@ -43,3 +43,23 @@ feeds:
 # See reading-prefs.md §Feed weights for graduation/demotion thresholds.
 # `/cu:status` surfaces graduation/demotion candidates automatically via
 # `scripts/accuracy-metrics.py --feed-weight-candidates`.
+
+# Per-feed `triage_mode` field (optional, default: standard routing):
+#
+#   high-prestige-gated  Article defaults to Ignored unless one of these
+#                        bypass signals fires (see triage-rules.yaml):
+#                          - inbox_keyword_match (title/summary contains a
+#                            keyword from inbox_title_keywords)
+#                          - in_news (OpenAlex FWCI ≥ in_news_threshold;
+#                            requires DOI extractable from URL)
+#                          - gemma_high_interest (Gemma classified as
+#                            high-interested + read-now/save-reference)
+#                        Use for top-tier general-purpose journals where
+#                        most articles are outside scope but a small
+#                        fraction are "everyone's talking about this."
+#                        Pair with weight: 0.05 (very low default).
+#   # - name: Nature
+#   #   url: https://www.nature.com/nature.rss
+#   #   category: science
+#   #   weight: 0.05
+#   #   triage_mode: high-prestige-gated
