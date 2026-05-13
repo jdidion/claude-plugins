@@ -63,6 +63,7 @@ def _import_script(filename: str, modname: str):
 feeds = _import_script('feeds.py', '_feeds')
 local_triage = _import_script('local-triage.py', '_local_triage')
 level2_queue = _import_script('level2-queue.py', '_level2_queue')
+openalex_impact = _import_script('openalex_impact.py', '_openalex_impact')
 
 
 def _log(msg: str) -> None:
@@ -117,6 +118,10 @@ def fetch_all_feeds(days: int) -> tuple[list[dict], int, list[dict]]:
         feed_name = feed['name']
         feed_weight = feed.get('weight')
         category = feed.get('category', '')
+        # Optional per-feed routing mode. 'high-prestige-gated' means: default
+        # to Ignored unless the impact-check or inbox-keyword bypass fires.
+        # See triage-rules.yaml:high_prestige_gated.
+        triage_mode = feed.get('triage_mode')
         from datetime import datetime, timedelta, timezone
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         for a in fa:
@@ -125,6 +130,8 @@ def fetch_all_feeds(days: int) -> tuple[list[dict], int, list[dict]]:
                 a['feed_weight'] = feed_weight
             a['category'] = category
             a['source'] = 'rss'
+            if triage_mode:
+                a['triage_mode'] = triage_mode
             parsed = feeds.parse_date(a.get('date', ''))
             # Accept articles with unparseable or missing dates — we'd rather
             # evaluate a fresh-ish RSS item than drop it.
@@ -209,6 +216,88 @@ def run_gemma_pass(articles: list[dict]) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Step 3.5 — high-prestige-gated impact-check helpers.
+#
+# Articles from feeds tagged `triage_mode: high-prestige-gated` (Nature, Science,
+# NEJM, etc.) default to Ignored unless an impact bypass fires:
+#   1. inbox_keyword_match — title or local-summary contains a substring from
+#      triage-rules.yaml:inbox_title_keywords
+#   2. in_news (citation impact) — OpenAlex FWCI for the article's DOI ≥ threshold
+#   3. gemma_high_interest — Gemma already classified as high-interested + read-now
+#      (we don't second-guess a confident Gemma signal)
+# ---------------------------------------------------------------------------
+
+import yaml as _yaml  # noqa: E402
+
+_TRIAGE_RULES_PATH = SCRIPT_DIR.parent / 'config' / 'triage-rules.yaml'
+
+# Cache for the keyword + config load so route() doesn't re-read every call.
+_RULES_CACHE: dict | None = None
+
+
+def _load_triage_rules() -> dict:
+    global _RULES_CACHE
+    if _RULES_CACHE is not None:
+        return _RULES_CACHE
+    if not _TRIAGE_RULES_PATH.is_file():
+        _RULES_CACHE = {}
+        return _RULES_CACHE
+    try:
+        with _TRIAGE_RULES_PATH.open() as f:
+            _RULES_CACHE = _yaml.safe_load(f) or {}
+    except (OSError, _yaml.YAMLError) as e:
+        _log(f'WARN: failed to load triage-rules.yaml: {e}')
+        _RULES_CACHE = {}
+    return _RULES_CACHE or {}
+
+
+def _inbox_keyword_match(article: dict, keywords: list[str]) -> str | None:
+    """Return the matched keyword (lowercased) or None.
+
+    Checks article title + Gemma summary (if present) + RSS description against
+    the inbox_title_keywords list. Match is case-insensitive substring.
+    """
+    if not keywords:
+        return None
+    haystack = ' '.join(filter(None, [
+        article.get('title') or '',
+        (article.get('_local') or {}).get('summary') or '',
+        article.get('description') or '',
+    ])).lower()
+    for kw in keywords:
+        kw_lower = kw.lower()
+        if kw_lower in haystack:
+            return kw_lower
+    return None
+
+
+def _high_prestige_check(
+    article: dict,
+    keywords: list[str],
+    fwci_threshold: float,
+) -> tuple[bool, str | None, dict | None]:
+    """Return (fired, signal_name, impact_payload).
+
+    Order matters: keyword match is free (no API call), so check it first.
+    Only fall through to OpenAlex if no keyword fires.
+    """
+    # 1. Keyword match — free, no API.
+    matched_kw = _inbox_keyword_match(article, keywords)
+    if matched_kw:
+        return True, f'inbox_keyword:{matched_kw}', None
+
+    # 2. OpenAlex FWCI — only run if we can extract a DOI from the URL.
+    url = article.get('url') or ''
+    doi = openalex_impact.extract_doi_from_url(url)
+    if not doi:
+        return False, None, None
+    impact = openalex_impact.check_doi(doi, threshold=fwci_threshold)
+    if impact.get('fired'):
+        return True, 'in_news', impact
+    return False, None, impact
+
+
+# ---------------------------------------------------------------------------
 # Step 4 — route. Produces two sets: (a) immediate writes, (b) pending-claude.
 # ---------------------------------------------------------------------------
 
@@ -217,14 +306,22 @@ def route(articles: list[dict]) -> tuple[list[dict], list[dict], list[dict]]:
     """Return (to_ignored_auto, to_inbox_auto, to_pending_claude).
 
     - to_ignored_auto: Gemma says high-not-interested OR uncertain+skip, OR
-      feed_weight<=0.1 AND _local.verdict==uncertain. Written with
-      triage_source: local-model.
+      feed_weight<=0.1 AND _local.verdict==uncertain. Also: high-prestige-gated
+      articles whose impact-check + keyword-check both miss. Written with
+      triage_source: local-model or high-prestige-default-ignored.
     - to_inbox_auto: Gemma says high-interested with verdict read-now/save-ref.
-      Written with triage_source: local-model-high-inbox.
+      Also: high-prestige-gated articles where keyword-match or OpenAlex
+      impact-check fires. Written with triage_source: local-model-high-inbox
+      or high-prestige-bypass-{signal}.
     - to_pending_claude: everything else. Written to Ignored with
       triage_source: pending-claude-review AND enqueued to level-2 so an
       interactive Claude can re-evaluate.
     """
+    rules = _load_triage_rules()
+    inbox_keywords = list(rules.get('inbox_title_keywords') or [])
+    hp_block = rules.get('high_prestige_gated') or {}
+    fwci_threshold = float(hp_block.get('in_news_threshold', 1.0))
+
     auto_ignored: list[dict] = []
     auto_inbox: list[dict] = []
     pending: list[dict] = []
@@ -235,6 +332,7 @@ def route(articles: list[dict]) -> tuple[list[dict], list[dict], list[dict]]:
         verdict = local.get('verdict')
         weight = a.get('feed_weight')
         err = local.get('error')
+        triage_mode = a.get('triage_mode')
 
         if err:
             # Gemma crashed on this article — default to pending-claude
@@ -242,6 +340,39 @@ def route(articles: list[dict]) -> tuple[list[dict], list[dict], list[dict]]:
             pending.append(a)
             continue
 
+        # ── high-prestige-gated branch ───────────────────────────────────
+        # Runs BEFORE the standard Gemma rules so a prestige feed can't
+        # leak through on a Gemma "uncertain" verdict — we want the gate
+        # to be the prior. Exception: a confidently-high-interested Gemma
+        # call still wins, because that means the article matched our
+        # topic prior on its own and we don't need the prestige bypass.
+        if triage_mode == 'high-prestige-gated':
+            if conf == 'high-interested' and verdict in ('read-now', 'save-reference'):
+                # Gemma is confident this matches user interest. Trust it.
+                a['_high_prestige_signal'] = 'gemma_high_interest'
+                auto_inbox.append(a)
+                continue
+            fired, signal, impact = _high_prestige_check(
+                a, inbox_keywords, fwci_threshold,
+            )
+            if fired:
+                a['_high_prestige_signal'] = signal
+                if impact:
+                    a['_high_prestige_fwci'] = impact.get('fwci')
+                    a['_high_prestige_cited_by_count'] = impact.get('cited_by_count')
+                auto_inbox.append(a)
+                continue
+            # No bypass — force-route to Ignored regardless of Gemma's
+            # uncertain-or-low-confidence call. The prestige-gate is the
+            # default. Tag the signal as 'default' so the triage_source
+            # downstream is recognizable.
+            a['_high_prestige_signal'] = 'default-ignored'
+            if impact:
+                a['_high_prestige_fwci'] = impact.get('fwci')
+            auto_ignored.append(a)
+            continue
+
+        # ── Standard (non-prestige-gated) routing ────────────────────────
         # Auto-skip rules (match local-triage.py decide_skip()).
         if conf == 'high-not-interested':
             auto_ignored.append(a)
@@ -286,6 +417,23 @@ def _local_to_article_fields(a: dict, triage_source: str) -> dict:
     fm['triage_source'] = triage_source
     if local.get('model'):
         fm['local_model'] = local['model']
+    # High-prestige-gated articles override the generic triage_source with
+    # the specific bypass signal (or "default-ignored") so we can audit
+    # which gate decision the cron made for each article.
+    hp_signal = a.get('_high_prestige_signal')
+    if hp_signal:
+        fm['triage_source'] = f'high-prestige-{hp_signal}'
+        # Stamp the OpenAlex impact data when we have it.
+        if a.get('_high_prestige_fwci') is not None:
+            fm['fwci'] = a['_high_prestige_fwci']
+        if a.get('_high_prestige_cited_by_count') is not None:
+            fm['cited_by_count'] = a['_high_prestige_cited_by_count']
+        # Force routing: bypass signals -> Inbox, default-ignored -> Ignored.
+        if hp_signal == 'default-ignored':
+            fm['confidence'] = 'high-not-interested'
+        else:
+            fm['confidence'] = 'high-interested'
+            fm['verdict'] = local.get('verdict') if local.get('verdict') in ('read-now', 'save-reference') else 'save-reference'
     # Force the folder via confidence — except for pending-claude which
     # lands in Ignored regardless of _local.confidence.
     if triage_source == 'pending-claude-review':

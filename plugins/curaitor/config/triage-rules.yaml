@@ -56,6 +56,33 @@ source_weights:
   instapaper: 0.7   # bias toward Review/Inbox
   rss: 0.5          # neutral
 
+# High-prestige-gated routing — applied when a feed in feeds.yaml has
+# `triage_mode: high-prestige-gated`. Articles from these feeds default to
+# Ignored unless one of the bypass signals fires:
+#
+#   1. inbox_keyword_match  — title or summary contains a substring from
+#                             inbox_title_keywords (above). Free, no API.
+#   2. in_news              — OpenAlex FWCI for the article's DOI ≥
+#                             in_news_threshold (free, no key, but DOI must
+#                             be extractable from the publisher's URL).
+#   3. gemma_high_interest  — Gemma already classified as high-interested
+#                             with read-now/save-reference. We trust this
+#                             over the prestige-gate (article matched the
+#                             topic prior on its own).
+#
+# Default destination on a no-bypass article: Ignored.
+high_prestige_gated:
+  bypass_signals:
+    - inbox_keyword_match
+    - in_news
+    - gemma_high_interest
+  in_news_threshold: 1.0   # FWCI >= 1.0 fires the in_news bypass.
+                           # Empirical: ~2% of recent Nature papers cross this in
+                           # the first 30 days. Tunable; raise to make the gate
+                           # stricter, lower to fire more aggressively.
+  bypass_destination: Inbox
+  default_destination: Ignored
+
 # Autonomy-level routing overrides (read from config/accuracy-stats.yaml)
 # These constrain how aggressively the LLM can route articles to Ignored
 autonomy_overrides:
