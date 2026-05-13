@@ -4,7 +4,7 @@ Session memory persistence, prompt logging, and context analysis for Claude Code
 
 ## Features
 
-- **PreCompact hook**: Injects git state + reminder before compaction so Claude preserves unsaved learnings
+- **PreCompact hook**: Injects git state + directs Claude to invoke `/offload:context` (which preserves learnings, then chains to `/compact`) instead of compacting directly
 - **SessionEnd hook**: Persists git state snapshot for future session pickup
 - **Prompt logging**: Opt-in JSONL log of all user prompts for trend analysis
 - **Manual skills**: `/offload:context`, `/offload:export`, `/offload:summarize`

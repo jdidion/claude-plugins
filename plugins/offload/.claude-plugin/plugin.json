@@ -1,7 +1,7 @@
 {
   "name": "offload",
-  "version": "2.0.0",
-  "description": "Session memory persistence, prompt logging, and context analysis for Claude Code",
+  "version": "2.1.0",
+  "description": "Session memory persistence, prompt logging, and context analysis for Claude Code. PreCompact hook directs Claude to /offload:context (which preserves learnings, then chains to /compact) instead of bare /compact.",
   "author": { "name": "John Didion" },
   "license": "MIT",
   "keywords": ["context", "memory", "compaction", "session", "offload", "prompts", "logging"]
