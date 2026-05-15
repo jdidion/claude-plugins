@@ -149,17 +149,19 @@ setup_workspace() {
     echo "  Setting up curaitor-$name..."
     mkdir -p "$dir/.claude/skills"
 
-    # Clean up the stale pre-skills layout: older setup.sh versions linked
-    # $CURAITOR_DIR/.claude/commands/cu:*.md into $dir/.claude/commands/. That
-    # source directory no longer exists, so any surviving symlinks are broken.
+    # Clean up legacy layouts:
+    #   - older setup.sh versions linked $CURAITOR_DIR/.claude/commands/cu:*.md
+    #     into $dir/.claude/commands/; that source dir is gone.
+    #   - the cu:NAME skill layout was renamed to bare NAME (PR for plugin
+    #     v0.5.0). Drop any surviving cu:* symlinks under .claude/skills/.
     if [ -d "$dir/.claude/commands" ]; then
         find "$dir/.claude/commands" -maxdepth 1 -name 'cu:*' -type l -delete 2>/dev/null || true
-        # Remove empty commands dir so it doesn't confuse future runs
         rmdir "$dir/.claude/commands" 2>/dev/null || true
     fi
+    find "$dir/.claude/skills" -maxdepth 1 -name 'cu:*' -type l -delete 2>/dev/null || true
 
-    # Symlink each skill directory (plugin layout: skills/cu:NAME/SKILL.md)
-    for skill_dir in "$CURAITOR_DIR/skills"/cu:*; do
+    # Symlink each skill directory (plugin layout: skills/NAME/SKILL.md)
+    for skill_dir in "$CURAITOR_DIR/skills"/*; do
         [ -d "$skill_dir" ] || continue
         local base=$(basename "$skill_dir")
         local target="$dir/.claude/skills/$base"
@@ -200,7 +202,7 @@ REVIEW_EOF
         fi
     fi
 
-    local count=$(find "$dir/.claude/skills" -maxdepth 1 -name 'cu:*' -type l 2>/dev/null | wc -l | tr -d ' ')
+    local count=$(find "$dir/.claude/skills" -maxdepth 1 -type l 2>/dev/null | wc -l | tr -d ' ')
     echo "  $count skills linked"
 }
 
@@ -282,7 +284,7 @@ echo ""
 echo "Done. To use:"
 echo "  cd $CURAITOR_DIR && claude          # direct (recommended)"
 echo "  cd $CURAITOR_DIR-review && claude    # interactive workspace"
-echo "  cd $CURAITOR_DIR-triage && claude -p '/cu:triage' --permission-mode bypassPermissions"
+echo "  cd $CURAITOR_DIR-triage && claude -p '/curaitor:triage' --permission-mode bypassPermissions"
 if [ "$ENABLE_LOCAL_TRIAGE" -eq 0 ]; then
     echo ""
     echo "  Optional: enable local-model first-round triage with:"

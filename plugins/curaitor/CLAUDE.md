@@ -12,21 +12,21 @@ This applies to: Slack messages via the `p` verdict, auto-generated topic summar
 
 ## Commands
 
-- `/cu:triage` — Process Instapaper saves: fetch, evaluate, route to Obsidian, archive
-- `/cu:discover` — Surface new articles from RSS feeds with semantic relevance evaluation
-- `/cu:review` — Interactive review: browse Review queue in cmux browser, discuss, give verdicts
-- `/cu:read` — Deep reading: read Inbox articles with full summary, RAG discussion, save or discard
-- `/cu:review-ignored` — Check Ignored folder for false negatives
-- `/cu:status` — Quick dashboard: queue counts, cron health, accuracy metrics, next actions
-- `/cu:dashboard` — Launch the curaitor webapp (hono/node server) and open it in cmux browser
-- `/cu:seed-preferences` — One-time: analyze Zotero + Instapaper history to build initial preferences
+- `/curaitor:triage` — Process Instapaper saves: fetch, evaluate, route to Obsidian, archive
+- `/curaitor:discover` — Surface new articles from RSS feeds with semantic relevance evaluation
+- `/curaitor:review` — Interactive review: browse Review queue in cmux browser, discuss, give verdicts
+- `/curaitor:read` — Deep reading: read Inbox articles with full summary, RAG discussion, save or discard
+- `/curaitor:review-ignored` — Check Ignored folder for false negatives
+- `/curaitor:status` — Quick dashboard: queue counts, cron health, accuracy metrics, next actions
+- `/curaitor:dashboard` — Launch the curaitor webapp (hono/node server) and open it in cmux browser
+- `/curaitor:seed-preferences` — One-time: analyze Zotero + Instapaper history to build initial preferences
 
 ## Setup
 
 1. Copy `.env.example` to `.env` and fill in your API credentials
 2. Install: `pip3 install requests-oauthlib pyyaml`
-3. Run `claude` in this directory — all `/cu:*` commands are available
-4. Run `/cu:seed-preferences` to initialize from your reading history
+3. Run `claude` in this directory — all `/curaitor:*` commands are available
+4. Run `/curaitor:seed-preferences` to initialize from your reading history
 
 ## Scripts (reduce token usage)
 
@@ -111,24 +111,24 @@ All triage folders live under `Curaitor/` in the Obsidian vault:
 - **Curaitor/Review/** — uncertain, needs human review
 - **Curaitor/Ignored/** — triage agent thinks not interesting (machine classification, reviewable for false negatives)
 - **Curaitor/Recycle.md** — dismissed articles (simple unordered list of `- [title](url)` links)
-- **Curaitor/Archive/** — human-reviewed and dismissed during `/cu:read`, with audit trail in `Curaitor/Archive/Archive.md`
+- **Curaitor/Archive/** — human-reviewed and dismissed during `/curaitor:read`, with audit trail in `Curaitor/Archive/Archive.md`
 - **Library/** — permanently saved articles from deep read sessions
 - **Topics/** — topic notes with linked articles
 
 ### Folder semantics and triage signals
-- **Curaitor/Ignored/** is written ONLY by triage/discover agents (machine classification). The review agent reads from it (for `/cu:review-ignored`) and moves articles OUT, but NEVER adds to it.
+- **Curaitor/Ignored/** is written ONLY by triage/discover agents (machine classification). The review agent reads from it (for `/curaitor:review-ignored`) and moves articles OUT, but NEVER adds to it.
 - **Curaitor/Recycle.md** collects dismissed articles as a simple list of links. Articles arrive here from two paths:
-  - `/cu:review`: user dismisses an article from Review → **false positive** (triage was wrong to flag it as uncertain/interesting)
-  - `/cu:review-ignored`: user confirms an article was correctly ignored → **true negative** (triage was right)
-- **Curaitor/Archive/** is written ONLY by `/cu:read` (human decision after deep reading). Contains `Archive.md` with audit trail.
+  - `/curaitor:review`: user dismisses an article from Review → **false positive** (triage was wrong to flag it as uncertain/interesting)
+  - `/curaitor:review-ignored`: user confirms an article was correctly ignored → **true negative** (triage was right)
+- **Curaitor/Archive/** is written ONLY by `/curaitor:read` (human decision after deep reading). Contains `Archive.md` with audit trail.
 
 ### Triage quality signals
-Every human verdict during `/cu:review` and `/cu:review-ignored` provides a signal about triage quality. **Engagement counts as a positive signal** — if the user asks a question or requests more detail about an article, triage was right to surface it, even if the ultimate decision is to recycle.
+Every human verdict during `/curaitor:review` and `/curaitor:review-ignored` provides a signal about triage quality. **Engagement counts as a positive signal** — if the user asks a question or requests more detail about an article, triage was right to surface it, even if the ultimate decision is to recycle.
 
-- **True positive**: article kept during review (y, d, t, c, b, r, p, skip) OR the user engaged with it (asked ≥1 question / requested more detail) before recycling — triage was right to flag it for attention. Engaged TPs set `engaged: true` on the rolling_window entry so the engagement rate is visible in `/cu:status`.
+- **True positive**: article kept during review (y, d, t, c, b, r, p, skip) OR the user engaged with it (asked ≥1 question / requested more detail) before recycling — triage was right to flag it for attention. Engaged TPs set `engaged: true` on the rolling_window entry so the engagement rate is visible in `/curaitor:status`.
 - **False positive**: article recycled during review (n) with no engagement — the user saw the summary, said "no", moved on. Triage shouldn't have put this in Review. Agent analyzes WHY and updates preferences to decrease future false-positive rate.
-- **True negative** (via `/cu:review-ignored`): user confirms article was correctly ignored → reinforces correct triage behavior
-- **False negative** (via `/cu:review-ignored`): user rescues a wrongly-ignored article → agent analyzes WHY and updates preferences to decrease future false-negative rate.
+- **True negative** (via `/curaitor:review-ignored`): user confirms article was correctly ignored → reinforces correct triage behavior
+- **False negative** (via `/curaitor:review-ignored`): user rescues a wrongly-ignored article → agent analyzes WHY and updates preferences to decrease future false-negative rate.
 
 **Net signal correction for multi-step paths:**
 - **Ignored → Review → Ignored** (rescued then recycled): final signal is **TN** (triage was right to ignore it originally), not FP
@@ -180,7 +180,7 @@ The agent earns routing autonomy by demonstrating accuracy. Read `config/accurac
 
 Graduation requires rolling precision/recall thresholds + review-ignored passes. Run `python3 scripts/accuracy-metrics.py` to view progress. See `config/triage-rules.yaml` `autonomy_overrides` for per-level routing rules.
 
-After each `/cu:review` or `/cu:review-ignored` session, update `config/accuracy-stats.yaml` with TP/FP/TN/FN signals and check graduation/demotion criteria. Demotion: 3+ false negatives in one review-ignored pass drops a level.
+After each `/curaitor:review` or `/curaitor:review-ignored` session, update `config/accuracy-stats.yaml` with TP/FP/TN/FN signals and check graduation/demotion criteria. Demotion: 3+ false negatives in one review-ignored pass drops a level.
 
 ### Duplicate handling
 
@@ -188,7 +188,7 @@ Exact URL duplicates (URL already exists in any vault folder) are immediately re
 
 ## CRITICAL: Do not use AskUserQuestion during review
 
-NEVER use AskUserQuestion during `/cu:review` or `/cu:review-ignored`. It only supports 4 options and interrupts text output mid-sentence. Instead:
+NEVER use AskUserQuestion during `/curaitor:review` or `/curaitor:review-ignored`. It only supports 4 options and interrupts text output mid-sentence. Instead:
 - Print all text output completely FIRST
 - Then print the verdict menu as plain text
 - Wait for the user to type their response as free text
@@ -283,7 +283,7 @@ Before finalizing an article note, search Obsidian for existing topic notes that
    ```
 
 ### Topic linking
-When a match is found during `/cu:review`:
+When a match is found during `/curaitor:review`:
 - Add the topic names to the article note as `related_topics` in frontmatter
 - Add `[[wiki-links]]` to the related topics in the note body
 - Offer to append a backlink in the topic note (e.g., under a "## Related Articles" section)
@@ -304,10 +304,10 @@ When generating tags, first check what tags already exist in the vault by scanni
 - YYYY-MM-DD: [TP|FP|TN|FN] User [interested in / not interested in] [pattern]. Example: "Title". [analysis of why triage was right/wrong]
 ```
 Signal types:
-- **TP** (true positive): article kept during `/cu:review` — reinforce correct triage behavior
-- **FP** (false positive): article recycled during `/cu:review` — analyze and correct the over-inclusion pattern
-- **TN** (true negative): confirmed ignored during `/cu:review-ignored` — reinforce correct ignore behavior
-- **FN** (false negative): rescued during `/cu:review-ignored` — analyze and correct the over-exclusion pattern
+- **TP** (true positive): article kept during `/curaitor:review` — reinforce correct triage behavior
+- **FP** (false positive): article recycled during `/curaitor:review` — analyze and correct the over-inclusion pattern
+- **TN** (true negative): confirmed ignored during `/curaitor:review-ignored` — reinforce correct ignore behavior
+- **FN** (false negative): rescued during `/curaitor:review-ignored` — analyze and correct the over-exclusion pattern
 
 Only log informative patterns — not every decision.
 
@@ -339,7 +339,7 @@ When triaging or discovering a video (YouTube, Vimeo) or podcast episode:
 5. **If neither**: route to `Curaitor/Review/` as uncertain — the user can decide interactively
 6. **Frontmatter**: add `media_type: video` or `media_type: podcast` so review agent knows to expect non-text content
 
-During `/cu:review` deep read (`d`), fetch the transcript for RAG discussion rather than the page HTML.
+During `/curaitor:review` deep read (`d`), fetch the transcript for RAG discussion rather than the page HTML.
 
 ## PDF reading
 
@@ -349,23 +349,23 @@ Usage: check if `read_pdf` tool is available. If so, prefer it over WebFetch for
 
 ## Feeds
 
-`config/feeds.yaml` lists RSS feeds for `/cu:discover`. Add/remove by editing the file.
+`config/feeds.yaml` lists RSS feeds for `/curaitor:discover`. Add/remove by editing the file.
 
 ## Scheduling (unattended)
 
 Prefer `scripts/cron-wrapper.sh` over raw `claude -p` for cron:
-- It dispatches `/cu:discover` to the headless `scripts/discover-cron.py`
+- It dispatches `/curaitor:discover` to the headless `scripts/discover-cron.py`
   orchestrator, so discover runs don't need Claude auth at all.
-- For `/cu:triage` and other skills, it still calls `claude -p` but annotates
+- For `/curaitor:triage` and other skills, it still calls `claude -p` but annotates
   failure modes (Usage Policy, SSO token expiry, llhttp dylib mismatch) so
   silent-tail runs are diagnosable.
 
 ```bash
 # Triage Instapaper every 6 hours
-0 */6 * * * cd ~/projects/curaitor-review && ~/projects/claude-plugins/plugins/curaitor/scripts/cron-wrapper.sh ~/curaitor-triage.log "/cu:triage"
+0 */6 * * * cd ~/projects/curaitor-review && ~/projects/claude-plugins/plugins/curaitor/scripts/cron-wrapper.sh ~/curaitor-triage.log "/curaitor:triage"
 
 # Discover from feeds daily at 6am (headless path; no Claude auth required)
-0 6 * * * cd ~/projects/curaitor-review && ~/projects/claude-plugins/plugins/curaitor/scripts/cron-wrapper.sh ~/curaitor-discover.log "/cu:discover"
+0 6 * * * cd ~/projects/curaitor-review && ~/projects/claude-plugins/plugins/curaitor/scripts/cron-wrapper.sh ~/curaitor-discover.log "/curaitor:discover"
 ```
 
 ### Cron authentication

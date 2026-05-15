@@ -547,7 +547,7 @@ def _pregenerate_summaries(urls):
 
     Runs scripts/summarize-inbox.py --one-url for each URL. Failures are
     tolerated — pre-generation is an optimization; a miss just means
-    /cu:read will hit the inline fallback.
+    /curaitor:read will hit the inline fallback.
 
     Returns a dict with per-URL status for the triage output JSON.
     """
@@ -1047,7 +1047,7 @@ def cmd_add_to_catalog(args):
     Bookmarks.md, or any other). Skips if the URL already appears under the
     target category (or anywhere in the file if --category is omitted).
 
-    Used by the /cu:review and /cu:read `c` (Clip) and `b` (Bookmark)
+    Used by the /curaitor:review and /curaitor:read `c` (Clip) and `b` (Bookmark)
     verdicts. Mirrors --add-to-recycle's JSON-status contract.
     """
     vault = find_vault()
@@ -1128,8 +1128,8 @@ def cmd_find_leftovers(args):
 
     These are "leftover" Inbox/Review notes — the user already made a
     disposition decision (attached to topic, clipped to Tools, bookmarked)
-    but the source note wasn't deleted afterward. The /cu:review and
-    /cu:read skills should delete the source note after every t/c/b verdict,
+    but the source note wasn't deleted afterward. The /curaitor:review and
+    /curaitor:read skills should delete the source note after every t/c/b verdict,
     but manual-edit paths and some past versions didn't.
 
     Prints JSON listing each leftover with the topic/catalog it's already in.
@@ -1227,9 +1227,9 @@ def cmd_stamp_reviewed(args):
     Body is preserved verbatim. Idempotent — calling twice in the same day
     just bumps the count.
 
-    Used by /cu:read's `skip` verdict and /cu:review's `y`/`r` verdicts to
+    Used by /curaitor:read's `skip` verdict and /curaitor:review's `y`/`r` verdicts to
     flag articles the user explicitly chose to keep in Inbox after seeing
-    them. /cu:read's startup then surfaces these in a "Previously reviewed"
+    them. /curaitor:read's startup then surfaces these in a "Previously reviewed"
     section so the user can distinguish fresh arrivals from items they've
     already seen once.
 
@@ -1322,7 +1322,7 @@ def cmd_stamp_reviewed(args):
 def cmd_list_reviewed(args):
     """List Inbox notes with review_status: kept-after-review.
 
-    Used by /cu:read's startup to surface previously-reviewed articles in a
+    Used by /curaitor:read's startup to surface previously-reviewed articles in a
     distinct section before the fresh-arrivals queue. Returns JSON array,
     sorted by reviewed_at descending (most-recently-re-reviewed first).
     """
@@ -1458,11 +1458,11 @@ def main():
     parser.add_argument('--stamp-reviewed', action='store_true',
                         help='Find the Inbox note matching --url and mark its frontmatter '
                              'with review_status: kept-after-review, reviewed_at, and '
-                             'incremented reviewed_count. Used by /cu:read skip and '
-                             '/cu:review y/r verdicts to flag "previously reviewed" notes.')
+                             'incremented reviewed_count. Used by /curaitor:read skip and '
+                             '/curaitor:review y/r verdicts to flag "previously reviewed" notes.')
     parser.add_argument('--list-reviewed', action='store_true',
                         help='List Inbox notes with review_status: kept-after-review, '
-                             'sorted by reviewed_at descending. Used by /cu:read startup.')
+                             'sorted by reviewed_at descending. Used by /curaitor:read startup.')
     parser.add_argument('--attach-to-topic', action='store_true',
                         help='Append a [title](url) link under a heading in a Topic note, '
                              'skipping if the URL is already linked there. '

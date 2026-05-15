@@ -22,7 +22,7 @@ Then install individual plugins:
 | Plugin | Description | Commands |
 |--------|-------------|----------|
 | [crew](#crew) | Multi-provider code review with attribution | `/crew:review` `/crew:market` `/crew:do` |
-| [curaitor](#curaitor) | Article discovery, triage, and review | `/cu:triage` `/cu:discover` `/cu:review` `/cu:read` |
+| [curaitor](#curaitor) | Article discovery, triage, and review | `/curaitor:triage` `/curaitor:discover` `/curaitor:review` `/curaitor:read` |
 | [ed](#ed) | Open a file in an editor / viewer / OS app from a Claude session | `/ed:edit` `/ed:view` `/ed:open` |
 | [handoff](#handoff) | AirDrop-style context transfer + interactive teams | `/handoff:send` `/handoff:inbox` `/handoff:team` `/handoff:bridge` |
 | [muck](#muck) | Fight AI slop: spot, guard, clean, learn voice, generate | `/muck:spot` `/muck:guard` `/muck:clean` `/muck:voice` `/muck:gen` |
@@ -82,11 +82,11 @@ AI-powered article discovery, triage, and interactive review. Automates finding 
 
 **Usage:**
 ```
-/cu:triage          # Process Instapaper saves
-/cu:discover        # Surface articles from RSS feeds
-/cu:review          # Interactive review session
-/cu:read            # Deep reading with RAG discussion
-/cu:review-ignored  # Check for false negatives
+/curaitor:triage          # Process Instapaper saves
+/curaitor:discover        # Surface articles from RSS feeds
+/curaitor:review          # Interactive review session
+/curaitor:read            # Deep reading with RAG discussion
+/curaitor:review-ignored  # Check for false negatives
 ```
 
 ---

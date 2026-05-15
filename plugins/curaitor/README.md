@@ -7,12 +7,12 @@ curaitor helps researchers and knowledge workers stay on top of their reading by
 ## How it works
 
 ```
-RSS feeds ──> /cu:discover ──> Obsidian vault (Inbox / Review / Ignored)
+RSS feeds ──> /curaitor:discover ──> Obsidian vault (Inbox / Review / Ignored)
                                      ^
-Instapaper ──> /cu:triage ───────────┘──> Instapaper Archive
+Instapaper ──> /curaitor:triage ───────────┘──> Instapaper Archive
                                      |
-                         /cu:review (interactive triage)
-                         /cu:read   (deep reading + discussion)
+                         /curaitor:review (interactive triage)
+                         /curaitor:read   (deep reading + discussion)
                                      |
                           cmux browser + Claude discussion
                                      |
@@ -31,20 +31,20 @@ Every article is evaluated against your learned preferences:
 
 ### Preference learning
 
-curaitor learns your interests over time. Every time you give feedback during `/cu:review` or `/cu:read`, Claude updates `config/reading-prefs.md` with what your decision reveals. Deterministic routing rules in `config/triage-rules.yaml` supplement the LLM evaluation.
+curaitor learns your interests over time. Every time you give feedback during `/curaitor:review` or `/curaitor:read`, Claude updates `config/reading-prefs.md` with what your decision reveals. Deterministic routing rules in `config/triage-rules.yaml` supplement the LLM evaluation.
 
 ## Commands
 
 | Command | Mode | What it does |
 |---------|------|-------------|
-| `/cu:triage` | Unattended | Fetch Instapaper saves, evaluate, route to Obsidian, archive |
-| `/cu:discover` | Unattended | Scan RSS feeds for new articles, evaluate, route to Obsidian |
-| `/cu:review` | Interactive | Browse Review queue in cmux browser, discuss, give verdicts |
-| `/cu:read` | Interactive | Deep read Inbox articles: full summary, RAG discussion, save or discard |
-| `/cu:review-ignored` | Interactive | Check Ignored folder for false negatives |
-| `/cu:seed-preferences` | Interactive | One-time: analyze reading history to build initial preferences |
+| `/curaitor:triage` | Unattended | Fetch Instapaper saves, evaluate, route to Obsidian, archive |
+| `/curaitor:discover` | Unattended | Scan RSS feeds for new articles, evaluate, route to Obsidian |
+| `/curaitor:review` | Interactive | Browse Review queue in cmux browser, discuss, give verdicts |
+| `/curaitor:read` | Interactive | Deep read Inbox articles: full summary, RAG discussion, save or discard |
+| `/curaitor:review-ignored` | Interactive | Check Ignored folder for false negatives |
+| `/curaitor:seed-preferences` | Interactive | One-time: analyze reading history to build initial preferences |
 
-### Review verdicts (`/cu:review`)
+### Review verdicts (`/curaitor:review`)
 
 | Key | Action |
 |-----|--------|
@@ -61,7 +61,7 @@ curaitor learns your interests over time. Every time you give feedback during `/
 
 Inline commands: `d compare to our pipeline`, just type the question, e.g. `does this support hg38?`, `t Variant Calling`
 
-### Read verdicts (`/cu:read`)
+### Read verdicts (`/curaitor:read`)
 
 | Key | Action |
 |-----|--------|
@@ -147,7 +147,7 @@ See `config/feeds.yaml.example` for format. Per-feed `user_agent` overrides are 
 
 ```bash
 cd $CURAITOR_DIR && claude
-# then: /cu:seed-preferences
+# then: /curaitor:seed-preferences
 ```
 
 #### 6. Run
@@ -155,10 +155,10 @@ cd $CURAITOR_DIR && claude
 ```bash
 # Interactive review/reading
 cd $CURAITOR_DIR && claude
-# then: /cu:review, /cu:read, etc.
+# then: /curaitor:review, /curaitor:read, etc.
 
 # Unattended triage
-cd $CURAITOR_DIR && claude -p "/cu:triage" --permission-mode bypassPermissions
+cd $CURAITOR_DIR && claude -p "/curaitor:triage" --permission-mode bypassPermissions
 ```
 
 #### 7. Schedule (optional)
@@ -167,17 +167,17 @@ Route cron entries through `scripts/cron-wrapper.sh`. The wrapper sets
 `CURAITOR_CRON=1` so the discover/triage skills enqueue articles to the
 level-2 pending queue *before* calling Claude — if the hosted model
 refuses or times out mid-run, the day's articles are recoverable on the
-next interactive `/cu:review` or `/cu:read` (which drains the queue via
-`scripts/cu:status/protocol.md` §Step 0). The wrapper also detects the
+next interactive `/curaitor:review` or `/curaitor:read` (which drains the queue via
+`scripts/curaitor:status/protocol.md` §Step 0). The wrapper also detects the
 classifier-refusal fingerprint and exits 0 so cron doesn't mark the run
 as failed.
 
 ```bash
 # Triage Instapaper every 6 hours
-0 */6 * * * cd $CURAITOR_DIR && $CURAITOR_DIR/scripts/cron-wrapper.sh ~/curaitor-triage.log "/cu:triage"
+0 */6 * * * cd $CURAITOR_DIR && $CURAITOR_DIR/scripts/cron-wrapper.sh ~/curaitor-triage.log "/curaitor:triage"
 
 # Discover from feeds daily at 6am
-0 6 * * * cd $CURAITOR_DIR && $CURAITOR_DIR/scripts/cron-wrapper.sh ~/curaitor-discover.log "/cu:discover"
+0 6 * * * cd $CURAITOR_DIR && $CURAITOR_DIR/scripts/cron-wrapper.sh ~/curaitor-discover.log "/curaitor:discover"
 ```
 
 #### 8. Separate workspaces (optional)
@@ -211,7 +211,7 @@ These steps require direct Claude access (run outside Docker first):
 
 ```bash
 python scripts/import-opml.py ~/Downloads/feedly-export.opml --folder Science
-claude -p "/cu:seed-preferences"
+claude -p "/curaitor:seed-preferences"
 ```
 
 #### 3. Set environment variables
@@ -310,10 +310,10 @@ curaitor is built around **Instapaper** but can be adapted:
 
 | Tool | Auth | Key change |
 |------|------|-----------|
-| **Pocket** | OAuth 2.0 | Replace API calls in `cu:triage.md` with `/v3/get` and `/v3/send` |
+| **Pocket** | OAuth 2.0 | Replace API calls in `curaitor:triage.md` with `/v3/get` and `/v3/send` |
 | **Raindrop.io** | OAuth 2.0 or test token | `GET /raindrops/{id}`, `PUT /raindrop/{id}` |
 | **Readwise Reader** | Token | `/api/v3/list/` — an RSS alternative |
-| **None (RSS only)** | — | Remove `/cu:triage`, use only `/cu:discover` |
+| **None (RSS only)** | — | Remove `/curaitor:triage`, use only `/curaitor:discover` |
 
 ### Reference managers
 
@@ -352,7 +352,7 @@ Setup:
   category: social
 ```
 
-Sill articles will flow through `/cu:discover` like any other RSS feed, with three-tier routing based on your preferences.
+Sill articles will flow through `/curaitor:discover` like any other RSS feed, with three-tier routing based on your preferences.
 
 ## Troubleshooting
 
@@ -377,16 +377,16 @@ see verify errors:
 curaitor/
 ├── .claude-plugin/plugin.json      # Plugin manifest
 ├── CLAUDE.md                       # Plugin context for Claude
-├── skills/                         # Slash skills (/cu:*)
-│   ├── cu:triage/SKILL.md
-│   ├── cu:discover/SKILL.md
-│   ├── cu:review/SKILL.md
-│   ├── cu:read/SKILL.md
-│   ├── cu:review-ignored/SKILL.md
-│   ├── cu:status/SKILL.md
-│   ├── cu:dashboard/SKILL.md
-│   ├── cu:request-paper/SKILL.md
-│   └── cu:seed-preferences/SKILL.md
+├── skills/                         # Slash skills (/curaitor:*)
+│   ├── triage/SKILL.md
+│   ├── discover/SKILL.md
+│   ├── review/SKILL.md
+│   ├── read/SKILL.md
+│   ├── review-ignored/SKILL.md
+│   ├── status/SKILL.md
+│   ├── dashboard/SKILL.md
+│   ├── request-paper/SKILL.md
+│   └── seed-preferences/SKILL.md
 ├── config/
 │   ├── feeds.yaml                  # Your RSS feeds (gitignored)
 │   ├── feeds.yaml.example          # Feed format example

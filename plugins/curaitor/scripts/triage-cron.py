@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Headless /cu:triage orchestrator for cron.
+"""Headless /curaitor:triage orchestrator for cron.
 
-Replaces `claude -p "/cu:triage"` so scheduled triage runs don't depend on
+Replaces `claude -p "/curaitor:triage"` so scheduled triage runs don't depend on
 Claude auth. Mirrors the discover-cron.py architecture; key differences:
 
   - Source is Instapaper (not RSS), fetched via scripts/instapaper.py.
@@ -468,7 +468,7 @@ def archive_bookmarks(bookmark_ids: list[int]) -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Headless /cu:triage for cron.')
+    parser = argparse.ArgumentParser(description='Headless /curaitor:triage for cron.')
     parser.add_argument('--dry-run', action='store_true',
                         help='Dedup + Gemma but skip writes, enqueue, and archive.')
     args = parser.parse_args()

@@ -1,4 +1,4 @@
-# /cu:review — Interactive article review session
+# /curaitor:review — Interactive article review session
 
 Browse articles from the Review queue one at a time in the cmux browser, discuss with Claude, and give feedback.
 
@@ -13,9 +13,9 @@ Before doing anything else, check whether cron-Claude left work behind:
 python3 scripts/level2-queue.py status
 ```
 
-If `pending > 0`, process those articles before starting the review session. Cron `/cu:discover` and `/cu:triage` enqueue articles before handing them to Claude; an auth-expired cron leaves them queued for the next interactive session to finish. You ARE that interactive session — the user is already authenticated here.
+If `pending > 0`, process those articles before starting the review session. Cron `/curaitor:discover` and `/curaitor:triage` enqueue articles before handing them to Claude; an auth-expired cron leaves them queued for the next interactive session to finish. You ARE that interactive session — the user is already authenticated here.
 
-Procedure: `python3 scripts/level2-queue.py peek`, evaluate each with the normal level-2 Claude triage prompt, write the resulting notes, then `level2-queue.py ack --urls-file /tmp/processed.txt`. Report `Drained N level-2-pending articles.` before continuing. Full procedure in `skills/cu:status/protocol.md` §Step 0.
+Procedure: `python3 scripts/level2-queue.py peek`, evaluate each with the normal level-2 Claude triage prompt, write the resulting notes, then `level2-queue.py ack --urls-file /tmp/processed.txt`. Report `Drained N level-2-pending articles.` before continuing. Full procedure in `skills/status/protocol.md` §Step 0.
 
 If `pending == 0`, skip to Step 0.5.
 
@@ -253,7 +253,7 @@ The user can type:
 
 - **!** → **Deep read mode** (see below). If repo detected: star it and add to Tools catalog.
 - **?** → **Discussion mode**: fetch full article text, conversational Q&A loop, re-present verdict when user says "done".
-- **y** → move to `Curaitor/Inbox/`, update frontmatter with tags. If repo detected: star it and add to Tools catalog. After the move, stamp `review_status: kept-after-review` via `python3 scripts/triage-write.py --stamp-reviewed --url "$URL"` — this is the "I reviewed it and want to keep reading later" signal that `/cu:read` uses to surface the article in a distinct "Previously reviewed" section. **True positive** — triage was right to flag this for review.
+- **y** → move to `Curaitor/Inbox/`, update frontmatter with tags. If repo detected: star it and add to Tools catalog. After the move, stamp `review_status: kept-after-review` via `python3 scripts/triage-write.py --stamp-reviewed --url "$URL"` — this is the "I reviewed it and want to keep reading later" signal that `/curaitor:read` uses to surface the article in a distinct "Previously reviewed" section. **True positive** — triage was right to flag this for review.
 - **t** → **Topic mode**: attach article to a topic, then delete from Curaitor/Review/ (article lives under the topic, not separately):
   - If user typed `t` alone and related topics were found: list them, ask which one (or "new")
   - If user typed `t <topic name>`: use that topic (create with `--create-if-missing` if new)
@@ -281,8 +281,8 @@ The user can type:
     --url "$URL" --title "$TITLE" --catalog "Bookmarks.md" \
     --category "$CATEGORY" --description "$DESCRIPTION"
   ```
-- **r** → save to Zotero via API, move to `Curaitor/Inbox/`, add zotero_key to frontmatter. Then stamp `review_status: kept-after-review` via `python3 scripts/triage-write.py --stamp-reviewed --url "$URL"` so `/cu:read` surfaces the article in the "Previously reviewed" section next time. **True positive**.
-- **g** → **Get paper**: invoke the `/cu:request-paper` flow with the current article's metadata (title, authors, journal, URL). Do NOT change the article's folder or verdict — the user still owes a real decision after. Re-show the verdict menu for the same article so they can choose `r`/`y`/`t`/`skip` once they know the library is fetching it. Does not count as TP or FP yet — signal is deferred to the follow-up verdict.
+- **r** → save to Zotero via API, move to `Curaitor/Inbox/`, add zotero_key to frontmatter. Then stamp `review_status: kept-after-review` via `python3 scripts/triage-write.py --stamp-reviewed --url "$URL"` so `/curaitor:read` surfaces the article in the "Previously reviewed" section next time. **True positive**.
+- **g** → **Get paper**: invoke the `/curaitor:request-paper` flow with the current article's metadata (title, authors, journal, URL). Do NOT change the article's folder or verdict — the user still owes a real decision after. Re-show the verdict menu for the same article so they can choose `r`/`y`/`t`/`skip` once they know the library is fetching it. Does not count as TP or FP yet — signal is deferred to the follow-up verdict.
 - **p** → **Post to Slack** (see Post flow below), then recycle the article. **True positive**.
 - **n** → **Recycle**: the user has reviewed this and doesn't want to keep it. Signal depends on engagement (see below):
   - **If the user asked at least one question about this article OR requested more detail before giving `n`** → **engaged TP**: triage was right to surface it for attention, even though the user chose not to keep it. Record with `engaged: true` in the rolling_window entry.
@@ -314,17 +314,17 @@ For all other verdicts: tool calls complete → one-line acknowledgement if help
 
 If the user has to type "nudge", "next", "go", or "continue" between articles, the skill has a bug. Do not wait for those nudges. The menu at the end of the rendered next-article block is the implicit pause point; anything less is premature termination.
 
-### Cache hand-off to `/cu:read`
+### Cache hand-off to `/curaitor:read`
 
-Whenever a verdict moves the article to `Curaitor/Inbox/` (today: `y`, `r`, and the `d` deep-read path when it doesn't stay in Library), write any drafted assessment or discussion summary to the `/cu:read` summary cache so the next deep-read session gets a cache hit:
+Whenever a verdict moves the article to `Curaitor/Inbox/` (today: `y`, `r`, and the `d` deep-read path when it doesn't stay in Library), write any drafted assessment or discussion summary to the `/curaitor:read` summary cache so the next deep-read session gets a cache hit:
 
 ```bash
 python3 scripts/summarize-inbox.py --one-url "$ARTICLE_URL"
 ```
 
-This is best-effort and should run AFTER the `mcp__obsidian__write_note` call that moves the article. Cost: ~6s per article via Gemma 4 e4b. Failures are fine — `/cu:read` will fall back to inline generation and write the cache itself on first read.
+This is best-effort and should run AFTER the `mcp__obsidian__write_note` call that moves the article. Cost: ~6s per article via Gemma 4 e4b. Failures are fine — `/curaitor:read` will fall back to inline generation and write the cache itself on first read.
 
-If the review session produced a richer assessment than the stock prompt would (e.g. you had a long discussion loop before the verdict), the cache-from-scratch path is acceptable — the prompt used by `summarize-inbox.py` is the same one `/cu:read` uses inline, so quality parity is preserved. Don't try to splice discussion notes into the cache format; those belong in the topic note or Zotero entry, not the summary cache.
+If the review session produced a richer assessment than the stock prompt would (e.g. you had a long discussion loop before the verdict), the cache-from-scratch path is acceptable — the prompt used by `summarize-inbox.py` is the same one `/curaitor:read` uses inline, so quality parity is preserved. Don't try to splice discussion notes into the cache format; those belong in the topic note or Zotero entry, not the summary cache.
 
 Skip this hand-off for `t` (article moves to a Topic, not Inbox), `c`/`b`/`p` (no Inbox destination), and `n`/`skip` (not moving at all).
 
@@ -404,7 +404,7 @@ python3 scripts/triage-write.py --add-to-recycle --url "$URL" --title "$TITLE"
 ```
 The helper deduplicates against the live file and recent monthly archives, preventing the double-append bug that's produced duplicate recycle lines in the past. Parse its JSON output if you need to know whether the URL was `appended` or `skipped`.
 
-The review agent should NEVER add articles to `Curaitor/Ignored/`. Only the triage agent (`/cu:triage`, `/cu:discover`) writes to `Curaitor/Ignored/`. The review agent only reads from `Curaitor/Ignored/` (for `/cu:review-ignored`) and moves articles OUT of it.
+The review agent should NEVER add articles to `Curaitor/Ignored/`. Only the triage agent (`/curaitor:triage`, `/curaitor:discover`) writes to `Curaitor/Ignored/`. The review agent only reads from `Curaitor/Ignored/` (for `/curaitor:review-ignored`) and moves articles OUT of it.
 
 ### f. Star GitHub repos (on y or !)
 

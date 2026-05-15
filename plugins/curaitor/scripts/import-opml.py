@@ -111,7 +111,7 @@ def main():
     # Write
     os.makedirs(os.path.dirname(config_path), exist_ok=True)
     with open(config_path, 'w') as f:
-        f.write('# RSS feeds for /cu:discover\n')
+        f.write('# RSS feeds for /curaitor:discover\n')
         f.write(f'# Imported from {os.path.basename(opml_path)}\n\n')
         yaml.dump({'feeds': all_feeds}, f, default_flow_style=False, sort_keys=False)
 

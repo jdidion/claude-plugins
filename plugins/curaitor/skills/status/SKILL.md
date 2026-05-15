@@ -1,4 +1,4 @@
-# /cu:status — CurAItor status dashboard
+# /curaitor:status — CurAItor status dashboard
 
 Quick overview of queue counts, cron health, accuracy metrics, and recent activity.
 

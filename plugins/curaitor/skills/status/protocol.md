@@ -1,4 +1,4 @@
-# Protocol: /cu:status
+# Protocol: /curaitor:status
 
 Execution protocol for the curaitor status dashboard. The SKILL.md is the public entry point; this file is the operational detail — read this when running the skill.
 
@@ -23,7 +23,7 @@ Execution protocol for the curaitor status dashboard. The SKILL.md is the public
 
 ### Step 0: Drain the level-2 pending queue (if non-empty)
 
-Cron `/cu:discover` (headless, via `scripts/discover-cron.py`) writes pending-Claude articles to `Curaitor/Ignored/` with frontmatter `triage_source: pending-claude-review` **and** enqueues them to `~/.curaitor/level2-pending.json`. The Ignored write guarantees the article is visible in the vault even if Claude never drains; the queue entry is the cue for Claude to revisit. Cron `/cu:triage` still enqueues through the Claude path (pre-Claude enqueue, ack on success).
+Cron `/curaitor:discover` (headless, via `scripts/discover-cron.py`) writes pending-Claude articles to `Curaitor/Ignored/` with frontmatter `triage_source: pending-claude-review` **and** enqueues them to `~/.curaitor/level2-pending.json`. The Ignored write guarantees the article is visible in the vault even if Claude never drains; the queue entry is the cue for Claude to revisit. Cron `/curaitor:triage` still enqueues through the Claude path (pre-Claude enqueue, ack on success).
 
 Check the queue first:
 
@@ -31,7 +31,7 @@ Check the queue first:
 python3 scripts/level2-queue.py status
 ```
 
-If `pending > 0`, drain and process before anything else. Interactive `/cu:status`, `/cu:review`, `/cu:read`, and `/cu:review-ignored` sessions all run this step first because the user is already authed in their interactive Claude Code session.
+If `pending > 0`, drain and process before anything else. Interactive `/curaitor:status`, `/curaitor:review`, `/curaitor:read`, and `/curaitor:review-ignored` sessions all run this step first because the user is already authed in their interactive Claude Code session.
 
 **Safer pattern (peek + ack)** — preferred when any processing is non-trivial:
 
@@ -42,10 +42,10 @@ python3 scripts/level2-queue.py ack --urls-file /tmp/processed-urls.txt
 ```
 
 For each article in the queue:
-1. The article has a `_local` object from Gemma 4 (may contain an `error` field if Gemma failed) and a `source` field (`rss` for `/cu:discover`, `instapaper` for `/cu:triage`).
+1. The article has a `_local` object from Gemma 4 (may contain an `error` field if Gemma failed) and a `source` field (`rss` for `/curaitor:discover`, `instapaper` for `/curaitor:triage`).
 2. **All cron-queued articles now pre-write to `Curaitor/Ignored/`** under one of these `triage_source` values:
    - `pending-claude-review` — Gemma was uncertain OR a Gemma error; Claude needs to decide.
-   - `pending-claude-review-hard-route` — `/cu:triage` diverted this article pre-Gemma because its URL is LinkedIn, video, or podcast. Claude must do the URL-specific work (link-mining from post body AND comments for LinkedIn; transcript hunt for video/podcast) before classifying.
+   - `pending-claude-review-hard-route` — `/curaitor:triage` diverted this article pre-Gemma because its URL is LinkedIn, video, or podcast. Claude must do the URL-specific work (link-mining from post body AND comments for LinkedIn; transcript hunt for video/podcast) before classifying.
 3. Locate the existing note via `mcp__obsidian__search_notes` or a frontmatter-URL scan of `Curaitor/Ignored/`:
    - **Hard-routed LinkedIn posts**: use cmux browser snapshot to render the page, extract links from both the post body and the comment thread (LinkedIn authors often drop the primary source link in the first reply to dodge the "external links suppress reach" algorithm). If a high-value source URL is found, re-classify against that URL's content rather than the LinkedIn post itself.
    - **Hard-routed video/podcast**: fetch transcript via YouTube Data API, `yt-dlp --skip-download --write-auto-sub`, or show-notes from the feed. If no transcript is available, keep as Ignored with `triage_source: review-confirmed-no-transcript`.
@@ -148,13 +148,13 @@ Based on the numbers, suggest the next action the user should take. Rules:
 
 | Condition | Suggestion |
 |---|---|
-| Review > 20 | "Run `/cu:review` — N articles waiting" |
-| Review-ignored not run in ≥14 days | "Run `/cu:review-ignored` to check for false negatives" |
+| Review > 20 | "Run `/curaitor:review` — N articles waiting" |
+| Review-ignored not run in ≥14 days | "Run `/curaitor:review-ignored` to check for false negatives" |
 | Rolling window < 20 | "Review more articles to build accuracy data" |
 | Cron log timestamp outside expected window | "Check cron health — triage/discover may have failed" |
-| Cache entries < Inbox count (any) | "`/cu:read` will pre-generate N missing summaries on start" |
+| Cache entries < Inbox count (any) | "`/curaitor:read` will pre-generate N missing summaries on start" |
 | Cache entries > Inbox count + Review count (accumulated cruft) | "Run `scripts/summarize-inbox.py --gc --apply` to reap stale entries" |
-| Ignored > 100 with no recent review-ignored | "Run `/cu:review-ignored` — N articles to scan" |
+| Ignored > 100 with no recent review-ignored | "Run `/curaitor:review-ignored` — N articles to scan" |
 
 Print at most 2-3 suggestions, in priority order.
 
@@ -169,5 +169,5 @@ Print at most 2-3 suggestions, in priority order.
 
 - **Stale precision/recall when rolling window is empty.** Show `--` not `0.0%`. Graduation logic already handles the `< 20` case; don't duplicate that logic here.
 - **Empty log files.** A single empty `tail -1` is not diagnostic of cron failure — the log may have just been rotated or a run may be in progress. Only flag cron as unhealthy if the log is genuinely stale (>1 expected interval).
-- **Missing vault.** `prefetch-review.py` exits nonzero if it can't find a curaitor-flavored vault. Surface that to the user with a hint to run `/cu:seed-preferences` or point the Obsidian MCP at the right vault.
+- **Missing vault.** `prefetch-review.py` exits nonzero if it can't find a curaitor-flavored vault. Surface that to the user with a hint to run `/curaitor:seed-preferences` or point the Obsidian MCP at the right vault.
 - **`accuracy-metrics.py --json` vs plain.** Plain output prints a human dashboard; `--json` is for the webapp. This skill uses the plain form — don't switch to `--json` and then format the JSON.

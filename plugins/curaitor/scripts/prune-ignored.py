@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Archive reviewed-and-confirmed-ignored notes from Curaitor/Ignored/ after cooldown.
 
-The /cu:review-ignored skill sets `reviewed_ignored: YYYY-MM-DD` in the
+The /curaitor:review-ignored skill sets `reviewed_ignored: YYYY-MM-DD` in the
 frontmatter when the user confirms an ignored article was correctly classified.
 After a cooldown (default 30 days), those notes can be archived out of the live
 folder since their signal has been captured.

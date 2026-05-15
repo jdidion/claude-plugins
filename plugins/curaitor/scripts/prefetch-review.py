@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pre-fetch article data for /cu:review and /cu:review-ignored.
+"""Pre-fetch article data for /curaitor:review and /curaitor:review-ignored.
 
 Reads Obsidian notes, parses frontmatter, detects repos, collects tags and topics.
 Outputs JSON that the review agent can consume directly, saving LLM tokens on

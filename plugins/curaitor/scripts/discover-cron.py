@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Headless /cu:discover orchestrator for cron.
+"""Headless /curaitor:discover orchestrator for cron.
 
-Replaces `claude -p "/cu:discover"` so cron no longer depends on Claude auth.
+Replaces `claude -p "/curaitor:discover"` so cron no longer depends on Claude auth.
 The pipeline is fully deterministic + Gemma-driven:
 
   1. Fetch feeds (feeds.py)
@@ -498,7 +498,7 @@ def enqueue_pending(articles: list[dict]) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Headless /cu:discover for cron.')
+    parser = argparse.ArgumentParser(description='Headless /curaitor:discover for cron.')
     parser.add_argument('--days', type=int, default=7, help='Lookback window (default 7)')
     parser.add_argument('--dry-run', action='store_true', help='Do not write or enqueue anything; print plan')
     args = parser.parse_args()

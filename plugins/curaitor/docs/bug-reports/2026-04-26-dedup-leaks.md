@@ -1,16 +1,16 @@
-# Bug report: Dedup leaks in /cu:review and /cu:read
+# Bug report: Dedup leaks in /curaitor:review and /curaitor:read
 
 **Date**: 2026-04-26
-**Reporter**: Claude (interactive `/cu:read` session)
+**Reporter**: Claude (interactive `/curaitor:read` session)
 **Status**: Mitigations shipped in this report; retrospective fix applied to current vault state. Outstanding work below.
 
 ## Symptoms observed
 
-During the 2026-04-26 `/cu:read` session on the Inbox, two classes of dedup leaks surfaced:
+During the 2026-04-26 `/curaitor:read` session on the Inbox, two classes of dedup leaks surfaced:
 
 ### 1. Leftover Inbox / Review notes after `t`/`c`/`b` verdicts
 Inbox contained three notes whose URLs were **already committed to curated catalogs** from prior sessions:
-- `Curaitor/Inbox/FalkorDB graph database as the next step after Karpathy's LLM wiki.md` — repo was starred and the entry was already in `Tools & Projects.md` (Graph Databases & GraphRAG section) from the 2026-04-26 `/cu:review` batch-verdict session. The source note in `Curaitor/Inbox/` was never deleted.
+- `Curaitor/Inbox/FalkorDB graph database as the next step after Karpathy's LLM wiki.md` — repo was starred and the entry was already in `Tools & Projects.md` (Graph Databases & GraphRAG section) from the 2026-04-26 `/curaitor:review` batch-verdict session. The source note in `Curaitor/Inbox/` was never deleted.
 - `Curaitor/Inbox/GenNA Conditional generation of nucleotide sequences guided by natural-language.md` — article was already attached to `Personal/Topics/Variant Annotation.md` (line 173) from a prior session. Source note was never deleted.
 - `Curaitor/Inbox/Reading cell division histories from the methylome.md` — URL was already in `Personal/Topics/Journal Club Ideas.md`. Detected by the new `--find-leftovers` scan as the third instance.
 
@@ -18,14 +18,14 @@ Two of the three required an in-session "wait, didn't we already review that?" p
 
 ### 2. Recycle.md duplicate appends within a session
 During the same session, the agent `n`-recycled two articles and the append wrote bare `- [title](url)` lines to `Curaitor/Recycle.md` via `mcp__obsidian__write_note --mode append`. There was no check for existing entries:
-- "Direct RNA sequencing and signal alignment..." was recycled once via `/cu:read` — but it was **already** in Recycle.md line 2 from a prior session. Net effect: same URL on lines 2 and 30.
+- "Direct RNA sequencing and signal alignment..." was recycled once via `/curaitor:read` — but it was **already** in Recycle.md line 2 from a prior session. Net effect: same URL on lines 2 and 30.
 - "Flow matching for generative modelling..." was recycled at the user's direction, then the user changed their mind and asked to save it to Zotero. The Recycle.md line had to be surgically removed via `Edit` to clean up.
 
-The `cmd_write` path in `scripts/triage-write.py` already had intra-batch dedup logic (lines 400-434) and a `cmd_dedup_recycle` collapser for one-shot cleanup (line 520) — but the interactive `/cu:review` and `/cu:read` verdict paths bypassed both and appended directly through Obsidian MCP.
+The `cmd_write` path in `scripts/triage-write.py` already had intra-batch dedup logic (lines 400-434) and a `cmd_dedup_recycle` collapser for one-shot cleanup (line 520) — but the interactive `/curaitor:review` and `/curaitor:read` verdict paths bypassed both and appended directly through Obsidian MCP.
 
 ## Root cause
 
-**The interactive verdict handlers in `skills/cu:review/SKILL.md`, `skills/cu:read/SKILL.md`, and `skills/cu:review-ignored/SKILL.md` documented the recycle append as a raw `mcp__obsidian__write_note --mode append` operation**, with no mention of the dedup tooling that already existed for cron ingest.
+**The interactive verdict handlers in `skills/review/SKILL.md`, `skills/read/SKILL.md`, and `skills/review-ignored/SKILL.md` documented the recycle append as a raw `mcp__obsidian__write_note --mode append` operation**, with no mention of the dedup tooling that already existed for cron ingest.
 
 There were also **no pre-flight checks at session start** to detect notes whose URLs had already been committed to a Topic, `Tools & Projects.md`, or `Bookmarks.md` but hadn't been deleted from the source folder. The only existing dedup scan (`build_url_index`) was built for *triage-time* ingest dedup, not *post-verdict* cleanup verification.
 
@@ -42,17 +42,17 @@ Two new subcommands:
 
 Also reused the existing `normalize_url` → hash-free match (no host-canonicalization drift) and the `_URL_LINE` regex for frontmatter parsing.
 
-### `skills/cu:review/SKILL.md`
+### `skills/review/SKILL.md`
 
 - Added **Step 0.5: Reap leftover notes** between the Level-2 drain and queue load. Runs `--find-leftovers`, deletes each reported note, reports `Reaped N leftover review notes.`
 - Replaced every documented `append to Curaitor/Recycle.md` instance (n verdict, post-Slack recycle, recycle-format section) with the `--add-to-recycle` helper command. Added explicit "never `mcp__obsidian__write_note --mode append` directly" warning with reference to the past double-append incident.
 
-### `skills/cu:read/SKILL.md`
+### `skills/read/SKILL.md`
 
-- Same **Step 0.5: Reap leftover notes** pre-flight (Inbox only; `/cu:read` doesn't touch Review).
+- Same **Step 0.5: Reap leftover notes** pre-flight (Inbox only; `/curaitor:read` doesn't touch Review).
 - Replaced the §g.n menu-description and §h.n handler with the `--add-to-recycle` helper command. Same warning.
 
-### `skills/cu:review-ignored/SKILL.md`
+### `skills/review-ignored/SKILL.md`
 
 - Replaced the Step 1.3 duplicate-ignored recycle and the Step 3 "all good" recycle with the `--add-to-recycle` helper.
 
@@ -86,7 +86,7 @@ These are follow-ups the dev agent should pick up; they are NOT blockers for the
 
 1. **Zotero dedup parity.** `scripts/zotero.py save` has no `--add-to-recycle`-style dedup — it will happily create a second Zotero entry for the same URL. If the user re-runs `r` on the same article (e.g. after a mistake-recycle like the flow-matching incident), we get duplicate Zotero items. Same pattern should be applied: `zotero.py save` should query Zotero by URL/DOI first and skip if present, returning `{status: already_saved, item_key: ...}`.
 
-2. **Topic-attach dedup.** `/cu:review` and `/cu:read` currently append to `## Related Articles` in a Topic note without checking if the URL is already linked under that heading. The `--find-leftovers` scan will catch the Inbox-side leftover, but the topic note itself could have the same URL listed twice. Add a helper `triage-write.py --attach-to-topic --url URL --title TITLE --topic "Topic Name" --section "Related Articles"` that reads the topic file, skips the append if the URL is already linked, and writes only on a fresh hit.
+2. **Topic-attach dedup.** `/curaitor:review` and `/curaitor:read` currently append to `## Related Articles` in a Topic note without checking if the URL is already linked under that heading. The `--find-leftovers` scan will catch the Inbox-side leftover, but the topic note itself could have the same URL listed twice. Add a helper `triage-write.py --attach-to-topic --url URL --title TITLE --topic "Topic Name" --section "Related Articles"` that reads the topic file, skips the append if the URL is already linked, and writes only on a fresh hit.
 
 3. **Tools & Projects dedup.** Same pattern as topic-attach — the `c` verdict appends to `Tools & Projects.md` under a category heading without dedup. An `--add-to-catalog` helper would close the loop.
 

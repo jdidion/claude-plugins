@@ -1,4 +1,4 @@
-# /cu:dashboard — Launch the curaitor dashboard webapp
+# /curaitor:dashboard — Launch the curaitor dashboard webapp
 
 Start the curaitor dashboard (hono/node-server webapp) and open it in a browser. Prefers `cmux browser open`; falls back to the system default.
 

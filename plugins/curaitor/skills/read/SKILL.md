@@ -1,4 +1,4 @@
-# /cu:read — Deep reading session for Inbox articles
+# /curaitor:read — Deep reading session for Inbox articles
 
 Read through articles in your Inbox one at a time: open in cmux browser, get a structured summary, discuss interactively, then decide what to do with it.
 
@@ -13,9 +13,9 @@ Before listing the Inbox, check whether cron-Claude left work behind:
 python3 scripts/level2-queue.py status
 ```
 
-If `pending > 0`, process those articles BEFORE starting the read session. Cron `/cu:discover` and `/cu:triage` enqueue articles before handing them to Claude; an auth-expired cron leaves them queued for the next interactive session to finish. You ARE that interactive session.
+If `pending > 0`, process those articles BEFORE starting the read session. Cron `/curaitor:discover` and `/curaitor:triage` enqueue articles before handing them to Claude; an auth-expired cron leaves them queued for the next interactive session to finish. You ARE that interactive session.
 
-Procedure: `python3 scripts/level2-queue.py peek`, evaluate each with the normal level-2 Claude triage prompt, write the resulting notes, then `level2-queue.py ack --urls-file /tmp/processed.txt`. Report `Drained N level-2-pending articles.` before continuing. Full procedure in `skills/cu:status/protocol.md` §Step 0. Articles that land in `Curaitor/Inbox/` after this step will show up in the listing for Step 1.
+Procedure: `python3 scripts/level2-queue.py peek`, evaluate each with the normal level-2 Claude triage prompt, write the resulting notes, then `level2-queue.py ack --urls-file /tmp/processed.txt`. Report `Drained N level-2-pending articles.` before continuing. Full procedure in `skills/status/protocol.md` §Step 0. Articles that land in `Curaitor/Inbox/` after this step will show up in the listing for Step 1.
 
 If `pending == 0`, skip to Step 0.5.
 
@@ -38,7 +38,7 @@ If `leftover_count == 0`, proceed silently to Step 1.
 
 If Inbox is empty, tell the user and exit.
 
-**Do not editorialize about the count.** The list from `mcp__obsidian__list_directory` is the ground truth for what's in the Inbox right now. Do NOT compare it against a count from an earlier turn (e.g. a `/cu:status` summary) or call the difference "unexpected." Cron triage and discover add articles asynchronously, so new arrivals are normal, not surprising. Jump straight to Step 1.5.
+**Do not editorialize about the count.** The list from `mcp__obsidian__list_directory` is the ground truth for what's in the Inbox right now. Do NOT compare it against a count from an earlier turn (e.g. a `/curaitor:status` summary) or call the difference "unexpected." Cron triage and discover add articles asynchronously, so new arrivals are normal, not surprising. Jump straight to Step 1.5.
 
 ## Step 1.5: Kick off background summarization
 
@@ -68,7 +68,7 @@ Parse the JSON. Render the overview in **two sections when there are reviewed it
 ```
 Inbox: 23 articles (3 previously reviewed)
 
-Previously reviewed (kept after last /cu:read):
+Previously reviewed (kept after last /curaitor:read):
  R1. [genomics] "cfDNA fragment length MCED" (reviewed 2x, last 2026-05-08)
  R2. [ai-tooling] "Harness design for long-running development" (reviewed 1x, 2026-05-07)
  R3. [methods]  "Stratified Wasserstein kernel" (reviewed 1x, 2026-05-06)
@@ -205,8 +205,8 @@ The user can type:
 - **`tl`** — list all available topics with numbers, then let the user pick by number or name
 - **t Topic Name** — Attach to a specific topic (existing or new), remove from Inbox
 - **c** — Clip: star GitHub repo + add to Tools & Projects catalog, remove from Inbox (for tools/libraries)
-- **g** — **Get paper** (paywalled papers only) — draft a library-request email via `/cu:request-paper`, stay on this article, re-prompt for a real verdict after
-- **p** — Post to Slack, then archive (same flow as `/cu:review` post — prompt for channel, draft message, send)
+- **g** — **Get paper** (paywalled papers only) — draft a library-request email via `/curaitor:request-paper`, stay on this article, re-prompt for a real verdict after
+- **p** — Post to Slack, then archive (same flow as `/curaitor:review` post — prompt for channel, draft message, send)
 - **n** — Recycle: read it, not keeping. Appends via the dedup-safe helper (see §h for command). This is NOT a triage quality signal — triage correctly put it in Inbox.
 - **skip** — Leave in Inbox, move to next article
 - **q** — Quit, show session summary
@@ -215,7 +215,7 @@ The user can type:
 ### h. Handle verdict
 
 - **r** → Save to Zotero via API. Add discussion notes as a Zotero note attachment. Delete from Obsidian `Curaitor/Inbox/`.
-- **t** → Attach to topic via the dedup-safe helper (same flow as `/cu:review` topic mode). Discussion notes still go as a separate Zotero note or sub-entry. Delete from `Curaitor/Inbox/` after.
+- **t** → Attach to topic via the dedup-safe helper (same flow as `/curaitor:review` topic mode). Discussion notes still go as a separate Zotero note or sub-entry. Delete from `Curaitor/Inbox/` after.
   ```bash
   python3 scripts/triage-write.py --attach-to-topic \
     --url "$URL" --title "$TITLE" --topic "$TOPIC_NAME" \
@@ -234,8 +234,8 @@ The user can type:
     --url "$URL" --title "$TITLE" --catalog "Bookmarks.md" \
     --category "$CATEGORY" --description "$DESCRIPTION"
   ```
-- **g** → **Get paper**: invoke the `/cu:request-paper` flow with the current article's metadata (title, authors, journal, URL). Do NOT delete the Inbox note — the user still owes a real verdict after the request is sent. After the compose window is open, re-show the verdict menu so the session continues on the same article.
-- **p** → **Post to Slack**: same flow as `/cu:review` — prompt for channel (default from `config/user-settings.yaml`), draft message, present for editing, send via `mcp__slack-mcp__send_slack_message`, then archive with reason "Posted to Slack #{channel}". Delete from `Curaitor/Inbox/`.
+- **g** → **Get paper**: invoke the `/curaitor:request-paper` flow with the current article's metadata (title, authors, journal, URL). Do NOT delete the Inbox note — the user still owes a real verdict after the request is sent. After the compose window is open, re-show the verdict menu so the session continues on the same article.
+- **p** → **Post to Slack**: same flow as `/curaitor:review` — prompt for channel (default from `config/user-settings.yaml`), draft message, present for editing, send via `mcp__slack-mcp__send_slack_message`, then archive with reason "Posted to Slack #{channel}". Delete from `Curaitor/Inbox/`.
 - **n** → **Recycle**: append via the dedup-safe helper (never `mcp__obsidian__write_note --mode append` directly):
    ```bash
    python3 scripts/triage-write.py --add-to-recycle --url "$URL" --title "$TITLE"
@@ -245,7 +245,7 @@ The user can type:
   ```bash
   python3 scripts/triage-write.py --stamp-reviewed --url "$URL"
   ```
-  This lets the next `/cu:read` startup surface previously-kept articles in a distinct "Previously reviewed" section (see Step 0) so the user can distinguish fresh arrivals from items they consciously decided to keep. Best-effort: parse the JSON output — `status: stamped` on success, `status: not-found` is a no-op (rare; means the note's URL doesn't match Inbox state, worth investigating but don't block the verdict).
+  This lets the next `/curaitor:read` startup surface previously-kept articles in a distinct "Previously reviewed" section (see Step 0) so the user can distinguish fresh arrivals from items they consciously decided to keep. Best-effort: parse the JSON output — `status: stamped` on success, `status: not-found` is a no-op (rare; means the note's URL doesn't match Inbox state, worth investigating but don't block the verdict).
 - **q** → Stop, show session summary.
 
 ### h.1. Present the NEXT article immediately (do not end the turn)
@@ -256,7 +256,7 @@ Common dead-end patterns observed in real sessions (all BUGS, do not emit these 
 - "Adding X to the Variant Annotation topic." (and then stop)
 - "Looking for the existing topic." (and then stop)
 - "Now archiving the Instapaper bookmark and deleting the Inbox note." (and then stop)
-- Recap sentences like "Running /cu:read on the Inbox; on article 6/10..." (these are narration, not progress — and they end the turn because the agent thinks it's reporting out)
+- Recap sentences like "Running /curaitor:read on the Inbox; on article 6/10..." (these are narration, not progress — and they end the turn because the agent thinks it's reporting out)
 
 Any acknowledgement line followed by no further content is the exact bug. If the user has to type "nudge", "next", "go", or "continue" between articles, the skill has failed.
 
@@ -302,7 +302,7 @@ Discussion notes saved for:
 
 ### Continuation after verdict — see Step 3.h.1
 
-The canonical rule lives inline with the verdict list at **Step 3.h.1** so you encounter it while handling each verdict. TL;DR: after any non-`q` verdict, the next user-visible content in the SAME response must be article N+1's structured block — not an acknowledgement line, not "Moving on.", not silence, and not a recap sentence like "Running /cu:read on the Inbox; on article 6/10...".
+The canonical rule lives inline with the verdict list at **Step 3.h.1** so you encounter it while handling each verdict. TL;DR: after any non-`q` verdict, the next user-visible content in the SAME response must be article N+1's structured block — not an acknowledgement line, not "Moving on.", not silence, and not a recap sentence like "Running /curaitor:read on the Inbox; on article 6/10...".
 
 ### Other rules
 - Always fetch full article content before presenting the summary

@@ -2,14 +2,14 @@
 """Summary cache + pre-generation for curaitor articles.
 
 Caches generated summaries at `~/.curaitor/summary-cache/<hash>.md` so
-/cu:read (and /cu:review's Inbox-routing verdicts) can render instantly
+/curaitor:read (and /curaitor:review's Inbox-routing verdicts) can render instantly
 instead of regenerating a structured summary for every article.
 
 Layers:
   - Layer 1 (this script): cache read/write + atomic rename.
   - Layer 2 (this script): --stream walks the live Inbox, generating
     missing/stale entries in order. Intended to run in the background
-    while /cu:read interacts with the user.
+    while /curaitor:read interacts with the user.
   - Layer 3 (this script): --one-url for cron triage/discover to
     pre-generate at add-time; --drain for the queue pattern.
 
