@@ -1,6 +1,6 @@
-# /cu:request-paper — Request full text of a paywalled paper
+# /curaitor:request-paper — Request full text of a paywalled paper
 
-Request a paywalled paper via an institutional library service. This is a human-powered service — use sparingly. The skill is also invoked automatically by the `g` (get-paper) verdict in `/cu:read` and `/cu:review`.
+Request a paywalled paper via an institutional library service. This is a human-powered service — use sparingly. The skill is also invoked automatically by the `g` (get-paper) verdict in `/curaitor:read` and `/curaitor:review`.
 
 ## Configuration
 

@@ -9,7 +9,7 @@ $ARGUMENTS — Optional: number of days to look back (default 7), or a category 
 
 ## Relationship to the headless cron path
 
-`scripts/discover-cron.py` already routes confidently-classified articles (Gemma high-interested → Inbox, high-not-interested or hedged-skip → Ignored, weight=0.1 demoted-feed uncertain → Ignored). Anything Gemma is **uncertain** about lands in `Curaitor/Ignored/` with `triage_source: pending-claude-review` frontmatter AND is enqueued to level-2 so an interactive session (this one) can promote it later via the standard queue-drain path in `skills/cu:status/protocol.md` §Step 0.
+`scripts/discover-cron.py` already routes confidently-classified articles (Gemma high-interested → Inbox, high-not-interested or hedged-skip → Ignored, weight=0.1 demoted-feed uncertain → Ignored). Anything Gemma is **uncertain** about lands in `Curaitor/Ignored/` with `triage_source: pending-claude-review` frontmatter AND is enqueued to level-2 so an interactive session (this one) can promote it later via the standard queue-drain path in `skills/status/protocol.md` §Step 0.
 
 That means the interactive skill has two valid use cases:
 1. **Ad-hoc manual discover** outside the 6am cron window.
@@ -84,7 +84,7 @@ Discovered 42 new articles across 12 feeds:
 
 ## Step 7: Suggest next action
 
-After the summary, check the Review queue (`Curaitor/Review/`). If non-empty, print a single line: `Next: run /cu:review — N articles waiting`. Do **not** auto-invoke `/cu:review` — this is a hint only.
+After the summary, check the Review queue (`Curaitor/Review/`). If non-empty, print a single line: `Next: run /curaitor:review — N articles waiting`. Do **not** auto-invoke `/curaitor:review` — this is a hint only.
 
 ## Rules
 - Only evaluate based on RSS title/description/abstract — don't WebFetch full articles

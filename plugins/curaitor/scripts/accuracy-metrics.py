@@ -146,7 +146,7 @@ def save_stats(stats):
     normalize_rolling_window(stats)
     trim_rolling_window(stats)
     with open(STATS_PATH, 'w') as f:
-        f.write("# Auto-updated by /cu:review and /cu:review-ignored\n")
+        f.write("# Auto-updated by /curaitor:review and /curaitor:review-ignored\n")
         f.write("# Do not edit manually — use scripts/accuracy-metrics.py to view\n\n")
         yaml.dump(stats, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
@@ -161,9 +161,9 @@ def compute_metrics(stats):
            attention, even if the ultimate decision was to recycle.
       FP — article was recycled (n) AND there was no engagement. Pure false
            positive: the user saw the summary, said "no", and moved on.
-      TN — (via /cu:review-ignored) user confirmed an Ignored article was
+      TN — (via /curaitor:review-ignored) user confirmed an Ignored article was
            correctly ignored.
-      FN — (via /cu:review-ignored) user rescued a wrongly-ignored article.
+      FN — (via /curaitor:review-ignored) user rescued a wrongly-ignored article.
 
     The `duplicate` signal counts articles that re-surfaced after already
     being recycled. It's tracked separately from TP/FP/TN/FN so it doesn't
@@ -575,7 +575,7 @@ def cmd_record_signal(args):
     When --feed-name is supplied (RSS articles only), also increments a
     per-feed counter under lifetime.rss.by_feed.<feed>.{tp,fp,tn,fn,...}.
     --feed-weight, if supplied, is stored on the first signal for the
-    feed so /cu:status can decide graduation/demotion candidates. These
+    feed so /curaitor:status can decide graduation/demotion candidates. These
     fields are optional; a record-signal call without them behaves
     identically to the pre-2026-05-04 path.
 
@@ -617,7 +617,7 @@ def cmd_record_signal(args):
         feed_bucket[args.signal] = feed_bucket.get(args.signal, 0) + 1
         if args.signal == 'tp' and args.engaged:
             feed_bucket['engaged_tp'] = feed_bucket.get('engaged_tp', 0) + 1
-        # Keep the feed's weight up to date so /cu:status can decide
+        # Keep the feed's weight up to date so /curaitor:status can decide
         # graduation without needing to re-load feeds.yaml.
         if args.feed_weight is not None:
             feed_bucket['weight'] = args.feed_weight
@@ -665,7 +665,7 @@ def main():
                              'RSS articles only; ignored for instapaper.')
     parser.add_argument('--feed-weight', dest='feed_weight', type=float,
                         help='Feed probationary weight (used with --record-signal). Stored on the '
-                             'feed bucket so /cu:status can decide graduation/demotion candidates.')
+                             'feed bucket so /curaitor:status can decide graduation/demotion candidates.')
     parser.add_argument('--feed-weight-candidates', dest='feed_weight_candidates',
                         action='store_true',
                         help='Print feeds that cross graduation (0.3→0.6) or demotion thresholds '

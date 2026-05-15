@@ -21,7 +21,7 @@ Schema: {
       "summary": "...",
       "_local": {...},  # output from local-triage.py
       "enqueued_at": "2026-04-25T12:00:00Z",
-      "enqueued_by": "cu:discover" | "cu:triage",
+      "enqueued_by": "curaitor:discover" | "curaitor:triage",
       "reason": "auth-expired" | "timeout" | "crash" | "unknown"
     },
     ...
@@ -31,7 +31,7 @@ Schema: {
 Usage:
   # Cron: before calling Claude, enqueue articles
   cat articles.json | python3 scripts/level2-queue.py append \
-      --source rss --enqueued-by cu:discover --reason pre-claude
+      --source rss --enqueued-by curaitor:discover --reason pre-claude
 
   # Cron: after successful Claude completion, clear matched URLs
   python3 scripts/level2-queue.py ack --urls-file /tmp/processed-urls.txt
@@ -175,7 +175,7 @@ def main():
 
     p_append = sub.add_parser('append', help='Append articles from stdin')
     p_append.add_argument('--source', help='Source hint: rss|instapaper (recorded per article if missing)')
-    p_append.add_argument('--enqueued-by', help='Caller tag: cu:discover|cu:triage|manual')
+    p_append.add_argument('--enqueued-by', help='Caller tag: curaitor:discover|curaitor:triage|manual')
     p_append.add_argument('--reason', help='Why queued: pre-claude|auth-expired|timeout|crash')
 
     p_ack = sub.add_parser('ack', help='Remove URLs from queue')

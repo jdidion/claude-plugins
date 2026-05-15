@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# cron-wrapper.sh — wrap `claude -p /cu:<skill>` for cron so failure modes
+# cron-wrapper.sh — wrap `claude -p /curaitor:<skill>` for cron so failure modes
 # that would otherwise look like silent-tail "successful" runs are logged
 # and acknowledged instead.
 #
 # Usage:
 #   cron-wrapper.sh <log-path> <slash-command>
 # Example:
-#   cron-wrapper.sh ~/curaitor-discover.log /cu:discover
+#   cron-wrapper.sh ~/curaitor-discover.log /curaitor:discover
 #
 # Behavior:
 #   - Pre-flight probes `/opt/homebrew/bin/node --version` (since Claude
@@ -46,7 +46,7 @@ mkdir -p "$(dirname "$LOG")"
 TMP="$(mktemp -t curaitor-cron.XXXXXX)"
 
 # Signal cron context so the skills' pre-Claude enqueue step (Step 3.6
-# in cu:discover, Step 3.7 in cu:triage) writes escalations to the
+# in curaitor:discover, Step 3.7 in curaitor:triage) writes escalations to the
 # level-2 pending queue BEFORE calling Claude. Without this, a hosted
 # classifier refusal (or any mid-run failure) silently drops the day's
 # articles — they never reach Obsidian and never reach the queue.
@@ -242,16 +242,16 @@ if [ "$BACKEND" = "omlx" ]; then
     fi
 fi
 
-# Dispatch: /cu:discover and /cu:triage now run as fully headless Python
+# Dispatch: /curaitor:discover and /curaitor:triage now run as fully headless Python
 # orchestrators that don't need Claude auth. All other skills still go through
 # `claude -p`. See scripts/discover-cron.py and scripts/triage-cron.py for the
 # pipelines (fetch → dedup → Gemma → deterministic routing → enqueue pending).
 case "$SLASH" in
-    /cu:discover)
+    /curaitor:discover)
         python3 "$(dirname "$0")/discover-cron.py" > "$TMP" 2>&1
         CLAUDE_EXIT=$?
         ;;
-    /cu:triage)
+    /curaitor:triage)
         python3 "$(dirname "$0")/triage-cron.py" > "$TMP" 2>&1
         CLAUDE_EXIT=$?
         ;;
@@ -314,7 +314,7 @@ if [ "$TMP_BYTES" = "0" ]; then
     {
         printf '\n## Cron zero-output at %s (skill=%s)\n' "$TS" "$SLASH"
         printf 'The invoked process exited %s but produced no stdout/stderr.\n' "$CLAUDE_EXIT"
-        printf 'For /cu:discover this indicates the orchestrator died before its\n'
+        printf 'For /curaitor:discover this indicates the orchestrator died before its\n'
         printf 'summary line; for other skills it usually means claude -p hung or\n'
         printf 'was killed. Investigate the next cron fire.\n'
     } >> "$LOG"

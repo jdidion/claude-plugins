@@ -2,7 +2,7 @@
 
 Fetch unread Instapaper bookmarks, evaluate each article, route to Obsidian folders, and archive in Instapaper.
 
-**Cron no longer invokes this skill.** Scheduled triage runs go through the headless orchestrator `scripts/triage-cron.py`, which doesn't require Claude auth. It uses Instapaper's `/bookmarks/get_text` endpoint for full-article extraction and runs the same Gemma pre-pass as `/cu:discover`. Articles that need Claude judgment — ai-tooling obsolescence checks, LinkedIn link-mining (including comment-link extraction), video/podcast transcript handling — are routed to `Curaitor/Ignored/` with `triage_source: pending-claude-review` (or `…-hard-route` for the LinkedIn/video/podcast group) AND enqueued to level-2 so the next interactive Claude session (this one) promotes them via the standard drain in `skills/cu:status/protocol.md` §Step 0.
+**Cron no longer invokes this skill.** Scheduled triage runs go through the headless orchestrator `scripts/triage-cron.py`, which doesn't require Claude auth. It uses Instapaper's `/bookmarks/get_text` endpoint for full-article extraction and runs the same Gemma pre-pass as `/curaitor:discover`. Articles that need Claude judgment — ai-tooling obsolescence checks, LinkedIn link-mining (including comment-link extraction), video/podcast transcript handling — are routed to `Curaitor/Ignored/` with `triage_source: pending-claude-review` (or `…-hard-route` for the LinkedIn/video/podcast group) AND enqueued to level-2 so the next interactive Claude session (this one) promotes them via the standard drain in `skills/status/protocol.md` §Step 0.
 
 Interactive use cases for this skill:
 1. **Ad-hoc manual triage** outside the cron window.
@@ -152,7 +152,7 @@ Articles with `_local.skip == true` route directly to `Curaitor/Ignored/` with f
 If `CURAITOR_CRON=1` AND the escalation list (articles passing through to Step 4) is non-empty, write them to the level-2 pending queue *before* calling Claude:
 
 ```bash
-cat escalations.json | python3 scripts/level2-queue.py append --source instapaper --enqueued-by cu:triage --reason pre-claude
+cat escalations.json | python3 scripts/level2-queue.py append --source instapaper --enqueued-by curaitor:triage --reason pre-claude
 ```
 
 If cron Claude completes Step 4 successfully, ack those URLs after writing notes:
@@ -161,7 +161,7 @@ If cron Claude completes Step 4 successfully, ack those URLs after writing notes
 printf '%s\n' "${PROCESSED_URLS[@]}" | python3 scripts/level2-queue.py ack --urls-file /dev/stdin
 ```
 
-If cron Claude fails (auth expired, timeout, crash), the articles stay on the queue and the next interactive `/cu:review`, `/cu:read`, `/cu:status`, or `/cu:review-ignored` session drains them (see `skills/cu:status/protocol.md` §Step 0).
+If cron Claude fails (auth expired, timeout, crash), the articles stay on the queue and the next interactive `/curaitor:review`, `/curaitor:read`, `/curaitor:status`, or `/curaitor:review-ignored` session drains them (see `skills/status/protocol.md` §Step 0).
 
 Skip this step when `CURAITOR_CRON` is unset.
 
@@ -207,7 +207,7 @@ Use the `mcp__obsidian__write_note` tool. The note path should be `Curaitor/{fol
 
 ## Step 4.5: Pre-generate summaries for Inbox articles (cron only)
 
-If `CURAITOR_CRON=1`, after writing any note that landed in `Curaitor/Inbox/`, pre-generate its structured summary into the cache so the next `/cu:read` session renders instantly instead of regenerating from scratch:
+If `CURAITOR_CRON=1`, after writing any note that landed in `Curaitor/Inbox/`, pre-generate its structured summary into the cache so the next `/curaitor:read` session renders instantly instead of regenerating from scratch:
 
 ```bash
 python3 scripts/summarize-inbox.py --one-url "$ARTICLE_URL"
@@ -215,8 +215,8 @@ python3 scripts/summarize-inbox.py --one-url "$ARTICLE_URL"
 
 Best-effort:
 - Runs sequentially; each call takes ~6s on Gemma 4 e4b via Ollama.
-- Failures are logged but do NOT block the triage run. A missed pre-generation just means `/cu:read` hits the inline fallback.
-- Skip this step entirely when `CURAITOR_CRON` is unset (interactive users can run `/cu:read` which spawns the same pre-generation as a background job — no need to double up).
+- Failures are logged but do NOT block the triage run. A missed pre-generation just means `/curaitor:read` hits the inline fallback.
+- Skip this step entirely when `CURAITOR_CRON` is unset (interactive users can run `/curaitor:read` which spawns the same pre-generation as a background job — no need to double up).
 
 ## Step 5: Archive in Instapaper
 
@@ -248,7 +248,7 @@ All 15 archived in Instapaper.
 Autonomy: Level 1 (Normal) | Rolling: --/50 entries
 ```
 
-If autonomy level is 0, always append: "Run `/cu:review-ignored` to check for false negatives and help calibrate triage accuracy."
+If autonomy level is 0, always append: "Run `/curaitor:review-ignored` to check for false negatives and help calibrate triage accuracy."
 If last_review_ignored is older than the reminder threshold for the current level, append the reminder.
 
 ## Rules

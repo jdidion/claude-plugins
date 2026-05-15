@@ -13,9 +13,9 @@ Before loading the Ignored folder, check whether cron-Claude left work behind:
 python3 scripts/level2-queue.py status
 ```
 
-If `pending > 0`, process those articles before starting this review-ignored session. Cron `/cu:discover` and `/cu:triage` enqueue articles before handing them to Claude; an auth-expired cron leaves them queued for the next interactive session. You ARE that interactive session.
+If `pending > 0`, process those articles before starting this review-ignored session. Cron `/curaitor:discover` and `/curaitor:triage` enqueue articles before handing them to Claude; an auth-expired cron leaves them queued for the next interactive session. You ARE that interactive session.
 
-Procedure: peek, evaluate each with the normal level-2 Claude prompt, write notes, ack the processed URLs. Full procedure in `skills/cu:status/protocol.md` §Step 0. Report `Drained N level-2-pending articles.` then continue.
+Procedure: peek, evaluate each with the normal level-2 Claude prompt, write notes, ack the processed URLs. Full procedure in `skills/status/protocol.md` §Step 0. Report `Drained N level-2-pending articles.` then continue.
 
 If `pending == 0`, skip to Step 1.
 
@@ -133,7 +133,7 @@ with open('config/accuracy-stats.yaml') as f: d = yaml.safe_load(f)
 d['review_ignored_passes'] = d.get('review_ignored_passes', 0) + 1
 d['last_review_ignored'] = date.today().isoformat()
 with open('config/accuracy-stats.yaml', 'w') as f:
-    f.write('# Auto-updated by /cu:review and /cu:review-ignored\n# Do not edit manually — use scripts/accuracy-metrics.py to view\n\n')
+    f.write('# Auto-updated by /curaitor:review and /curaitor:review-ignored\n# Do not edit manually — use scripts/accuracy-metrics.py to view\n\n')
     yaml.dump(d, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 "
 ```
@@ -166,4 +166,4 @@ Preferences updated:
 - Proactively flag articles that seem like potential false negatives in a separate "flagged" group
 - Only update preferences when a clear pattern correction emerges
 - Print all text output FIRST, then prompt — never use AskUserQuestion
-- **No subjective quality judgments** on papers, authors, or methods — see the same rule in `cu:read/SKILL.md` and `cu:review/SKILL.md`. When flagging potential false negatives, say `the article describes a clinical cfDNA benchmarking method` (factual) not `this looks like an important methods paper` (subjective).
+- **No subjective quality judgments** on papers, authors, or methods — see the same rule in `curaitor:read/SKILL.md` and `curaitor:review/SKILL.md`. When flagging potential false negatives, say `the article describes a clinical cfDNA benchmarking method` (factual) not `this looks like an important methods paper` (subjective).
