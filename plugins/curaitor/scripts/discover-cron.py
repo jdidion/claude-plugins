@@ -302,17 +302,21 @@ def _high_prestige_check(
 # ---------------------------------------------------------------------------
 
 
-def route(articles: list[dict]) -> tuple[list[dict], list[dict], list[dict]]:
-    """Return (to_ignored_auto, to_inbox_auto, to_pending_claude).
+def route(articles: list[dict]) -> tuple[list[dict], list[dict], list[dict], list[dict]]:
+    """Return (to_ignored_auto, to_inbox_auto, to_review_auto, to_pending_claude).
 
     - to_ignored_auto: Gemma says high-not-interested OR uncertain+skip, OR
       feed_weight<=0.1 AND _local.verdict==uncertain. Also: high-prestige-gated
       articles whose impact-check + keyword-check both miss. Written with
       triage_source: local-model or high-prestige-default-ignored.
     - to_inbox_auto: Gemma says high-interested with verdict read-now/save-ref.
-      Also: high-prestige-gated articles where keyword-match or OpenAlex
-      impact-check fires. Written with triage_source: local-model-high-inbox
+      Also: high-prestige-gated articles bypassed via inbox_keyword_match or
+      gemma_high_interest. Written with triage_source: local-model-high-inbox
       or high-prestige-bypass-{signal}.
+    - to_review_auto: high-prestige-gated articles bypassed via the in_news
+      (FWCI) signal. Routed to Review so user verdicts in /curaitor:review
+      drive preference learning ("which high-FWCI articles am I actually
+      interested in?"). Written with triage_source: high-prestige-bypass-in_news.
     - to_pending_claude: everything else. Written to Ignored with
       triage_source: pending-claude-review AND enqueued to level-2 so an
       interactive Claude can re-evaluate.
@@ -324,6 +328,7 @@ def route(articles: list[dict]) -> tuple[list[dict], list[dict], list[dict]]:
 
     auto_ignored: list[dict] = []
     auto_inbox: list[dict] = []
+    auto_review: list[dict] = []
     pending: list[dict] = []
 
     for a in articles:
@@ -360,7 +365,14 @@ def route(articles: list[dict]) -> tuple[list[dict], list[dict], list[dict]]:
                 if impact:
                     a['_high_prestige_fwci'] = impact.get('fwci')
                     a['_high_prestige_cited_by_count'] = impact.get('cited_by_count')
-                auto_inbox.append(a)
+                # in_news (FWCI bypass) routes to Review so user verdicts feed
+                # preference learning. Other bypasses (keyword match = explicit
+                # user rule, gemma_high_interest = trained classifier) stay
+                # direct-to-Inbox.
+                if signal == 'in_news':
+                    auto_review.append(a)
+                else:
+                    auto_inbox.append(a)
                 continue
             # No bypass — force-route to Ignored regardless of Gemma's
             # uncertain-or-low-confidence call. The prestige-gate is the
@@ -392,7 +404,7 @@ def route(articles: list[dict]) -> tuple[list[dict], list[dict], list[dict]]:
         # → write Ignored with pending-claude-review flag + enqueue.
         pending.append(a)
 
-    return auto_ignored, auto_inbox, pending
+    return auto_ignored, auto_inbox, auto_review, pending
 
 
 # ---------------------------------------------------------------------------
@@ -428,9 +440,18 @@ def _local_to_article_fields(a: dict, triage_source: str) -> dict:
             fm['fwci'] = a['_high_prestige_fwci']
         if a.get('_high_prestige_cited_by_count') is not None:
             fm['cited_by_count'] = a['_high_prestige_cited_by_count']
-        # Force routing: bypass signals -> Inbox, default-ignored -> Ignored.
+        # Force routing per signal:
+        #   default-ignored      -> Ignored (high-not-interested)
+        #   in_news (FWCI bypass)-> Review  (uncertain) so user verdicts drive
+        #                          preference learning for high-citation
+        #                          articles
+        #   inbox_keyword:* and
+        #   gemma_high_interest  -> Inbox   (high-interested)
         if hp_signal == 'default-ignored':
             fm['confidence'] = 'high-not-interested'
+        elif hp_signal == 'in_news':
+            fm['confidence'] = 'uncertain'
+            fm['verdict'] = 'review'
         else:
             fm['confidence'] = 'high-interested'
             fm['verdict'] = local.get('verdict') if local.get('verdict') in ('read-now', 'save-reference') else 'save-reference'
@@ -546,10 +567,10 @@ def main() -> int:
     survivors = run_gemma_pass(survivors)
 
     # Step 4 — route
-    auto_ignored, auto_inbox, pending = route(survivors)
+    auto_ignored, auto_inbox, auto_review, pending = route(survivors)
     _log(
         f'route: auto_ignored={len(auto_ignored)}, auto_inbox={len(auto_inbox)}, '
-        f'pending_claude={len(pending)}'
+        f'auto_review={len(auto_review)}, pending_claude={len(pending)}'
     )
 
     if args.dry_run:
@@ -559,6 +580,7 @@ def main() -> int:
             'survivors': len(survivors),
             'auto_ignored': len(auto_ignored),
             'auto_inbox': len(auto_inbox),
+            'auto_review': len(auto_review),
             'pending_claude': len(pending),
             'feed_errors': feed_errors,
         }, indent=2))
@@ -570,7 +592,11 @@ def main() -> int:
     # Step 5b — write auto-inbox (pre-generate summaries)
     inbox_res = write_batch(auto_inbox, 'local-model-high-inbox', generate_summaries=True)
 
-    # Step 5c — write pending to Ignored AND enqueue
+    # Step 5c — write auto-review (high-prestige in_news bypass; user reads &
+    # verdicts these in /curaitor:review). Summaries help the review UX.
+    review_res = write_batch(auto_review, 'high-prestige-bypass-in_news', generate_summaries=True)
+
+    # Step 5d — write pending to Ignored AND enqueue for level-2 Claude pass
     pending_res = write_batch(pending, 'pending-claude-review', generate_summaries=False)
     enqueued = enqueue_pending(pending)
 
@@ -582,6 +608,7 @@ def main() -> int:
         'dedup': dedup_counts,
         'auto_ignored': ign_res.get('routing', {}).get('ignored', 0),
         'auto_inbox': inbox_res.get('routing', {}).get('inbox', 0),
+        'auto_review': review_res.get('routing', {}).get('review', 0),
         'pending_claude_written': pending_res.get('routing', {}).get('ignored', 0),
         'pending_claude_enqueued': enqueued,
         'elapsed_s': elapsed,

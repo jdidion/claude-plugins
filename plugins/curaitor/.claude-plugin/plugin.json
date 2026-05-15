@@ -1,7 +1,7 @@
 {
   "name": "curaitor",
   "description": "AI-powered article discovery, triage, and interactive review. Pulls from Instapaper and RSS, routes articles into Obsidian (Inbox/Review/Ignored) by learned preferences, and runs interactive review/read sessions in cmux browser.",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "author": {
     "name": "John Didion"
   },
