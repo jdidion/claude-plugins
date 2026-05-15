@@ -80,7 +80,13 @@ high_prestige_gated:
                            # Empirical: ~2% of recent Nature papers cross this in
                            # the first 30 days. Tunable; raise to make the gate
                            # stricter, lower to fire more aggressively.
-  bypass_destination: Inbox
+  # Bypass destination by signal (hardcoded in scripts/discover-cron.py:route):
+  #   inbox_keyword_match  -> Inbox   (explicit user keyword rule, trusted)
+  #   gemma_high_interest  -> Inbox   (trained classifier confident)
+  #   in_news              -> Review  (user verdicts in /curaitor:review feed
+  #                                    preference learning so the LLM learns
+  #                                    which high-FWCI articles you actually
+  #                                    care about)
   default_destination: Ignored
 
 # Autonomy-level routing overrides (read from config/accuracy-stats.yaml)
