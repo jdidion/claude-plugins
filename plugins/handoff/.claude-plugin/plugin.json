@@ -1,7 +1,7 @@
 {
   "name": "handoff",
   "description": "AirDrop-style context handoff and interactive team coordination for Claude Code sessions in cmux",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "author": {
     "name": "John Didion"
   },

@@ -16,15 +16,26 @@ Sessions are keyed by the Claude **session ID** (a UUID), not a friendly name. T
 
 ## Step 1: Determine the session ID
 
-Claude Code exposes the session ID in hook payloads and via the internal session path. The simplest path is to pull it from the transcript filename that Claude is currently appending to:
+Claude Code exposes the session ID as `$CLAUDE_CODE_SESSION_ID` in skill bash invocations. Use that:
 
 ```bash
-# Find the most-recently-modified session jsonl file.
-SESSION_JSONL=$(ls -1t ~/.claude/projects/*/*.jsonl 2>/dev/null | head -1)
-SESSION_ID=$(basename "$SESSION_JSONL" .jsonl)
+SESSION_ID="$CLAUDE_CODE_SESSION_ID"
 ```
 
-If that fails, ask the user — they can run `echo $CLAUDE_SESSION_ID` in a terminal started under the Claude hook environment, or paste the path from `/status`.
+If for some reason that env var is empty (very old Claude Code build, or the runtime didn't populate it), fall back to scanning **only this project's** transcript directory — never glob across `~/.claude/projects/*` because in multi-session setups the most-recently-modified jsonl can belong to a different Claude entirely, leading to silently registering the wrong session ID:
+
+```bash
+if [ -z "$SESSION_ID" ]; then
+    # Convert the calling cwd to Claude's project-dir slug:
+    #   /Users/jodidion/projects/personal/claude-plugins
+    # → -Users-jodidion-projects-personal-claude-plugins
+    PROJECT_SLUG=$(pwd | sed 's|/|-|g')
+    SESSION_JSONL=$(ls -1t ~/.claude/projects/"$PROJECT_SLUG"/*.jsonl 2>/dev/null | head -1)
+    SESSION_ID=$(basename "$SESSION_JSONL" .jsonl 2>/dev/null)
+fi
+```
+
+If both fail, ask the user — they can paste the path from `/status`.
 
 ## Step 2: Determine the cmux refs
 
